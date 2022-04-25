@@ -265,3 +265,10 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
+
+def print_dict(dict_, content=False, level=0):
+    for k, v in dict_.items():
+        print('\t' * level + f'{k}')
+        if type(v) == dict:
+            print_dict(v, content, level + 1)
+        elif content: print(v, '\n', '-' * 20)

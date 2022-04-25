@@ -296,7 +296,7 @@ def fill_trainval_infos(data_path, nusc, train_scenes, val_scenes, test=False, m
         curr_sd_rec = nusc.get('sample_data', sample_data_token)
         sweeps = []
         while len(sweeps) < max_sweeps - 1:
-            if curr_sd_rec['prev'] == '':
+            if curr_sd_rec['prev'] == '':   # 该 scene 的第一帧
                 if len(sweeps) == 0:
                     sweep = {
                         'lidar_path': Path(ref_lidar_path).relative_to(data_path).__str__(),
