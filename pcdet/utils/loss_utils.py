@@ -281,7 +281,7 @@ def neg_loss_cornernet(pred, gt, mask=None):
     pos_loss = torch.log(pred) * torch.pow(1 - pred, 2) * pos_inds
     neg_loss = torch.log(1 - pred) * torch.pow(pred, 2) * neg_weights * neg_inds
 
-    if mask is not None:
+    if mask is not None:    # normally is None
         mask = mask[:, None, :, :].float()
         pos_loss = pos_loss * mask
         neg_loss = neg_loss * mask
@@ -347,7 +347,7 @@ def _gather_feat(feat, ind, mask=None):
     dim  = feat.size(2)
     ind  = ind.unsqueeze(2).expand(ind.size(0), ind.size(1), dim)
     feat = feat.gather(1, ind)
-    if mask is not None:
+    if mask is not None:    # normally is None
         mask = mask.unsqueeze(2).expand_as(feat)
         feat = feat[mask]
         feat = feat.view(-1, dim)

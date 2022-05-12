@@ -188,7 +188,7 @@ class CenterHead(nn.Module):
 
                 gt_boxes_single_head = []
 
-                for idx, name in enumerate(gt_class_names):
+                for idx, name in enumerate(gt_class_names): # filter gt_boxes
                     if name not in cur_class_names:
                         continue
                     temp_box = cur_gt_boxes[idx]
@@ -196,7 +196,7 @@ class CenterHead(nn.Module):
                     gt_boxes_single_head.append(temp_box[None, :])
 
                 if len(gt_boxes_single_head) == 0:
-                    gt_boxes_single_head = cur_gt_boxes[:0, :]
+                    gt_boxes_single_head = cur_gt_boxes[:0, :]  # return an empty tensor
                 else:
                     gt_boxes_single_head = torch.cat(gt_boxes_single_head, dim=0)
 
@@ -212,7 +212,7 @@ class CenterHead(nn.Module):
                 inds_list.append(inds.to(gt_boxes_single_head.device))
                 masks_list.append(mask.to(gt_boxes_single_head.device))
 
-            ret_dict['heatmaps'].append(torch.stack(heatmap_list, dim=0))
+            ret_dict['heatmaps'].append(torch.stack(heatmap_list, dim=0))   # concat batch
             ret_dict['target_boxes'].append(torch.stack(target_boxes_list, dim=0))
             ret_dict['inds'].append(torch.stack(inds_list, dim=0))
             ret_dict['masks'].append(torch.stack(masks_list, dim=0))
@@ -235,6 +235,7 @@ class CenterHead(nn.Module):
             hm_loss *= self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['cls_weight']
 
             target_boxes = target_dicts['target_boxes'][idx]
+            # concat seperate head results
             pred_boxes = torch.cat([pred_dict[head_name] for head_name in self.separate_head_cfg.HEAD_ORDER], dim=1)
 
             reg_loss = self.reg_loss_func(
@@ -259,7 +260,7 @@ class CenterHead(nn.Module):
             'pred_scores': [],
             'pred_labels': [],
         } for k in range(batch_size)]
-        for idx, pred_dict in enumerate(pred_dicts):
+        for idx, pred_dict in enumerate(pred_dicts):    # for each head
             batch_hm = pred_dict['hm'].sigmoid()
             batch_center = pred_dict['center']
             batch_center_z = pred_dict['center_z']
@@ -279,7 +280,7 @@ class CenterHead(nn.Module):
                 post_center_limit_range=post_center_limit_range
             )
 
-            for k, final_dict in enumerate(final_pred_dicts):
+            for k, final_dict in enumerate(final_pred_dicts):   # for each batch
                 final_dict['pred_labels'] = self.class_id_mapping_each_head[idx][final_dict['pred_labels'].long()]
                 if post_process_cfg.NMS_CONFIG.NMS_TYPE != 'circle_nms':
                     selected, selected_scores = model_nms_utils.class_agnostic_nms(
@@ -325,7 +326,7 @@ class CenterHead(nn.Module):
         spatial_features_2d = data_dict['spatial_features_2d']
         x = self.shared_conv(spatial_features_2d)
 
-        pred_dicts = []
+        pred_dicts = [] # is a list actually
         for head in self.heads_list:
             pred_dicts.append(head(x))
 

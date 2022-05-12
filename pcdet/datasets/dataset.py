@@ -177,7 +177,7 @@ class DatasetTemplate(torch_data.Dataset):
                         coors.append(coor_pad)
                     ret[key] = np.concatenate(coors, axis=0)
                 elif key in ['gt_boxes']:
-                    max_gt = max([len(x) for x in val])
+                    max_gt = max([len(x) for x in val]) # padding gt
                     batch_gt_boxes3d = np.zeros((batch_size, max_gt, val[0].shape[-1]), dtype=np.float32)
                     for k in range(batch_size):
                         batch_gt_boxes3d[k, :val[k].__len__(), :] = val[k]

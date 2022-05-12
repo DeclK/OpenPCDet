@@ -11,6 +11,7 @@ from .centerpoint import CenterPoint
 from .pv_rcnn_plusplus import PVRCNNPlusPlus
 from .aux_pillar import AuxPillar
 from .aux_ssd import AuxSSD
+from .cia_ssd import CIASSD
 
 __all__ = {
     'Detector3DTemplate': Detector3DTemplate,
@@ -26,6 +27,7 @@ __all__ = {
     'PVRCNNPlusPlus': PVRCNNPlusPlus,
     'AuxPillar': AuxPillar,
     'AuxSSD': AuxSSD,
+    'CIASSD': CIASSD,
 }
 
 
