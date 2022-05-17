@@ -33,12 +33,14 @@ def split_once_semi_data(info_paths, data_splits, root_path, labeled_ratio, logg
             infos = list(filter(check_annos, infos))
             once_test_infos.extend(copy.deepcopy(infos))
 
-    raw_split = data_splits['raw']
-    for info_path in info_paths[raw_split]:
-        info_path = root_path / info_path
-        with open(info_path, 'rb') as f:
-            infos = pickle.load(f)
-            once_unlabeled_infos.extend(copy.deepcopy(infos))
+    # CHK MARK, make it compatible without unlabeled data
+    if data_splits.get('raw'):
+        raw_split = data_splits['raw']
+        for info_path in info_paths[raw_split]:
+            info_path = root_path / info_path
+            with open(info_path, 'rb') as f:
+                infos = pickle.load(f)
+                once_unlabeled_infos.extend(copy.deepcopy(infos))
 
     logger.info('Total samples for ONCE pre-training dataset: %d' % (len(once_pretrain_infos)))
     logger.info('Total samples for ONCE testing dataset: %d' % (len(once_test_infos)))

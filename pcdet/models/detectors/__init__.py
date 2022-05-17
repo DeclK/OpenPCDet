@@ -12,6 +12,7 @@ from .pv_rcnn_plusplus import PVRCNNPlusPlus
 from .aux_pillar import AuxPillar
 from .aux_ssd import AuxSSD
 from .cia_ssd import CIASSD
+from .semi_second import SemiSECOND
 
 __all__ = {
     'Detector3DTemplate': Detector3DTemplate,
@@ -28,6 +29,7 @@ __all__ = {
     'AuxPillar': AuxPillar,
     'AuxSSD': AuxSSD,
     'CIASSD': CIASSD,
+    'SemiSECOND': SemiSECOND,
 }
 
 
