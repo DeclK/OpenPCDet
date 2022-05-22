@@ -155,7 +155,7 @@ def filter_boxes(batch_dict, cfgs):
 
         record_dict = {
             'pred_boxes': final_boxes,
-            'pred_cls_preds': final_cls_preds,
+            'pred_scores': final_cls_preds, # CHK MARK, modify pred_cls_preds
             'pred_labels': final_labels
         }
         pred_dicts.append(record_dict)

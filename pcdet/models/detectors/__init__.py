@@ -13,6 +13,9 @@ from .aux_pillar import AuxPillar
 from .aux_ssd import AuxSSD
 from .cia_ssd import CIASSD
 from .semi_second import SemiSECOND
+from .semi_centerpoint import SemiCenterPoint
+from .cg_ssd import CGSSD
+from .semi_cgssd import SemiCGSSD
 
 __all__ = {
     'Detector3DTemplate': Detector3DTemplate,
@@ -30,6 +33,9 @@ __all__ = {
     'AuxSSD': AuxSSD,
     'CIASSD': CIASSD,
     'SemiSECOND': SemiSECOND,
+    'SemiCenterPoint': SemiCenterPoint,
+    'CGSSD': CGSSD,
+    'SemiCGSSD': SemiCGSSD,
 }
 
 

@@ -116,9 +116,15 @@ def _circle_nms(boxes, min_radius, post_max_size=83):
 
 
 def _gather_feat(feat, ind, mask=None):
+    """
+    Use ind to gather K features
+    feat: (B, H*W, C)
+    ind: (B, K)
+    return: (B, K, C)
+    """
     dim = feat.size(2)
-    ind = ind.unsqueeze(2).expand(ind.size(0), ind.size(1), dim)
-    feat = feat.gather(1, ind)
+    ind = ind.unsqueeze(2).expand(ind.size(0), ind.size(1), dim)    # (B, M, C)
+    feat = feat.gather(1, ind)  # (B, M, C)
     if mask is not None:
         mask = mask.unsqueeze(2).expand_as(feat)
         feat = feat[mask]
@@ -127,22 +133,33 @@ def _gather_feat(feat, ind, mask=None):
 
 
 def _transpose_and_gather_feat(feat, ind):
+    """
+    feat: (B, C, H, W)
+    ind: (B, K)
+    return: (B, K, C)
+    """
     feat = feat.permute(0, 2, 3, 1).contiguous()
-    feat = feat.view(feat.size(0), -1, feat.size(3))
+    feat = feat.view(feat.size(0), -1, feat.size(3))    # (B, H*W, C)
     feat = _gather_feat(feat, ind)
     return feat
 
 
 def _topk(scores, K=40):
+    """
+    scores: (B, C, H, W)
+    return:
+        topk_score: (B, K)
+        ...
+    """
     batch, num_class, height, width = scores.size()
 
-    topk_scores, topk_inds = torch.topk(scores.flatten(2, 3), K)
+    topk_scores, topk_inds = torch.topk(scores.flatten(2, 3), K)    # (B, C, K)
 
     topk_inds = topk_inds % (height * width)
     topk_ys = (topk_inds // width).float()
     topk_xs = (topk_inds % width).int().float()
 
-    topk_score, topk_ind = torch.topk(topk_scores.view(batch, -1), K)
+    topk_score, topk_ind = torch.topk(topk_scores.view(batch, -1), K)   # (B, K)
     topk_classes = (topk_ind // K).int()
     topk_inds = _gather_feat(topk_inds.view(batch, -1, 1), topk_ind).view(batch, K)
     topk_ys = _gather_feat(topk_ys.view(batch, -1, 1), topk_ind).view(batch, K)
@@ -167,6 +184,8 @@ def decode_bbox_from_heatmap(heatmap, rot_cos, rot_sin, center, center_z, dim,
     rot_cos = _transpose_and_gather_feat(rot_cos, inds).view(batch_size, K, 1)
     center_z = _transpose_and_gather_feat(center_z, inds).view(batch_size, K, 1)
     dim = _transpose_and_gather_feat(dim, inds).view(batch_size, K, 3)
+    # CHK MARK, keep scores for consistency loss
+    all_class_scores = _transpose_and_gather_feat(heatmap, inds).view(batch_size, K, -1)
 
     angle = torch.atan2(rot_sin, rot_cos)
     xs = xs.view(batch_size, K, 1) + center[:, :, 0:1]
@@ -197,6 +216,7 @@ def decode_bbox_from_heatmap(heatmap, rot_cos, rot_sin, center, center_z, dim,
         cur_boxes = final_box_preds[k, cur_mask]
         cur_scores = final_scores[k, cur_mask]
         cur_labels = final_class_ids[k, cur_mask]
+        cur_all_scores = all_class_scores[k, cur_mask]
 
         if circle_nms:
             assert False, 'not checked yet'
@@ -211,6 +231,7 @@ def decode_bbox_from_heatmap(heatmap, rot_cos, rot_sin, center, center_z, dim,
         ret_pred_dicts.append({
             'pred_boxes': cur_boxes,
             'pred_scores': cur_scores,
-            'pred_labels': cur_labels
+            'pred_labels': cur_labels,
+            'pred_all_scores': cur_all_scores,
         })
     return ret_pred_dicts

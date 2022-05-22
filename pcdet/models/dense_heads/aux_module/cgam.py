@@ -45,23 +45,7 @@ class SeparateHead(nn.Module):
 
 class CGAM(nn.Module):
     def __init__(self, model_cfg, input_channels, class_names, grid_size=None, voxel_size=None, point_cloud_range=None) -> None:
-        """
-        CGAM:
-            CORNER_TYPES: []
-            SHARED_CONV_CHANNEL: 64
-
-            HEAD_DICT: {
-                'hm':{'num_conv':2},    # out_channel is len(CORNER_TYPES)
-                'corner': {'out_channel':2, 'num_conv':2},
-            }
-            TARGET_ASSIGNER_CONFIG:
-                FEATURE_MAP_STRIDE: 8
-                GAUSSIAN_OVERLAP: 0.1
-                MIN_RADIUS: 2
-
-        """
         super().__init__()
-        # shared conv
         self.model_cfg = model_cfg
         self.point_cloud_range = point_cloud_range
         self.voxel_size = voxel_size
@@ -69,7 +53,7 @@ class CGAM(nn.Module):
         self.corner_types = model_cfg.CORNER_TYPES
         self.forward_ret_dict = {}
 
-        self.shared_fc = nn.Sequential(
+        self.shared_conv = nn.Sequential(
             nn.Conv2d(input_channels, self.model_cfg.SHARED_CONV_CHANNEL, 3, stride=1, padding=1),
             nn.BatchNorm2d(self.model_cfg.SHARED_CONV_CHANNEL),
             nn.ReLU()
@@ -78,6 +62,7 @@ class CGAM(nn.Module):
         # build seperate head
         head_dict = model_cfg.HEAD_DICT
         head_dict['hm'].update(dict(out_channels=len(model_cfg.CORNER_TYPES)))
+        assert len(model_cfg.CORNER_TYPES) == 3, 'only 3 types of corners are implemented'
         self.seperate_head = SeparateHead(
             input_channels=model_cfg.SHARED_CONV_CHANNEL,
             sep_head_dict=head_dict,
@@ -138,27 +123,13 @@ class CGAM(nn.Module):
         mask = gt_boxes.new_zeros(C, num_max_objs).long()
         # get corner points and foreground points
         corners = box_utils.boxes_to_corners_3d(gt_boxes[:, :7])  # (M, 8, 3)
-        corners_xy = corners[:, :4, :2]    # (N, 4, 2)
+        corners_xy = corners[:, :4, :2]    # (M, 4, 2)
         pts_in_flag = points_in_boxes_cpu(points[:, :3], gt_boxes[:, :7])
         in_label, pts_of_box = pts_in_flag.max(0)
-        fg_pts, pts_of_box = points[in_label.byte()], pts_of_box[in_label.byte()]
+        fg_pts, pts_of_box = points[in_label.bool()], pts_of_box[in_label.bool()]
 
         corners_i, corners_l, corners_w = self.corner_selection(corners_xy, gt_boxes, fg_pts, pts_of_box)
         sub_corner = torch.stack([corners_i, corners_l, corners_w], dim=0) # (3, M, 2)
-
-        # CHECK FOR CORNER_SELECTION
-        # import pickle
-        # # store for vis
-        # d = {}
-        # d['corners'] = corners
-        # d['sub_corner'] = sub_corner
-        # d['points'] = points
-        # d['fg_pts'] = fg_pts
-        # d['pts_of_box'] = pts_of_box
-        # d['gt_boxes'] = gt_boxes
-        # with open('/home/chk/OpenPCDet/vis.pkl', 'wb') as f:
-        #     pickle.dump(d, f)
-        # ----------------------------------------------------
 
         x, y = sub_corner[:, :, 0], sub_corner[:, :, 1]
         coord_x = (x - self.point_cloud_range[0]) / self.voxel_size[0] / feature_map_stride
@@ -184,12 +155,19 @@ class CGAM(nn.Module):
                     continue    # insurance
                 centernet_utils.draw_gaussian_to_heatmap(heatmap[i], center[i][k], radius[k].item())
                 corner_offset[i][k] = center[i][k] - center_int_float[i][k].float()    # use .float redundent!
-                inds[i][k] = center_int[i][k, 1] * feature_map_size[0] + center_int[i][k, 0]
+                inds[i][k] = center_int[i][k][1] * feature_map_size[0] + center_int[i][k][0]
                 mask[i][k] = 1
 
         return heatmap, corner_offset, inds, mask
 
     def assign_targets(self, gt_boxes, feature_map_size, points):
+        """
+        return: 
+            heatmap: (B, 3, H, W)
+            center_offset: (B, 3, K, 2), K is num_max_objs
+            inds: (B, 3, K)
+            masks: (B, 3, K)
+        """
         feature_map_size = feature_map_size[::-1]  # [H, W] ==> [x, y]
         target_assigner_cfg = self.model_cfg.TARGET_ASSIGNER_CONFIG
         ret_dict = {}
@@ -227,8 +205,8 @@ class CGAM(nn.Module):
             inds_list.append(inds.to(gt_boxes_single_head.device))
             masks_list.append(mask.to(gt_boxes_single_head.device))
 
-        ret_dict['heatmaps'] = torch.stack(heatmap_list, dim=0)   # concat batch
-        ret_dict['target_boxes'] = torch.stack(corner_offset_list, dim=0)
+        ret_dict['heatmap'] = torch.stack(heatmap_list, dim=0)   # stack batch
+        ret_dict['corner_offset'] = torch.stack(corner_offset_list, dim=0)
         ret_dict['inds'] = torch.stack(inds_list, dim=0)
         ret_dict['masks'] = torch.stack(masks_list, dim=0)
         return ret_dict
@@ -242,17 +220,22 @@ class CGAM(nn.Module):
         target_dict = self.forward_ret_dict['target_dict']
         tb_dict = {}
 
-        pred_dict['hm'] = self.sigmoid(pred_dict['hm'])
-        hm_loss = self.hm_loss_func(pred_dict['hm'], target_dict['heatmaps'])
+        if not self.model_cfg.HM_NORMALIZATION:
+            pred_dict['hm'] = self.sigmoid(pred_dict['hm'])
+        hm_loss = self.hm_loss_func(pred_dict['hm'], target_dict['heatmap'])
         hm_loss *= self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['cls_weight']
 
-        corner_offset = target_dict['corner_offset']
-        C = corner_offset.size(0)
+        offset_target = target_dict['corner_offset']
+        C = offset_target.size(1)
         reg_loss = 0
-        for i in range(C):
-            reg_loss += self.reg_loss_func(pred_dict['corner'],
-                target_dict['masks'][i], target_dict['inds'][i], corner_offset[i])
-        loc_loss = reg_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
+        for i in range(C):  # for each type corner
+            mask_i = target_dict['masks'][:, i]
+            ind_i = target_dict['inds'][:, i]
+            offset_target_i = offset_target[:, i]
+            reg_loss += self.reg_loss_func(pred_dict['corner'], mask_i, ind_i, offset_target_i)
+        loc_loss = (reg_loss * reg_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['code_weights'])).sum()
+        loc_loss = loc_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
+
         loss = hm_loss + loc_loss
         tb_dict['corner_hm_loss'] = hm_loss.item()
         tb_dict['corner_offset_loss'] = loc_loss.item()
@@ -263,18 +246,16 @@ class CGAM(nn.Module):
         x = self.shared_conv(spatial_features_2d)
 
         pred_dict = self.seperate_head(x)
+        
+        if self.model_cfg.HM_NORMALIZATION:
+            pred_dict['hm'] = self.sigmoid(pred_dict['hm'])
         self.forward_ret_dict['pred_dict'] = pred_dict
-
 
         if self.training:
             target_dict = self.assign_targets(
                 data_dict['gt_boxes'], feature_map_size=spatial_features_2d.size()[2:],
-                feature_map_stride=data_dict.get('spatial_features_2d_strides', None)
+                points=data_dict['points']
             )
             self.forward_ret_dict['target_dict'] = target_dict
 
-        return data_dict
-
-
-
-
+        return pred_dict

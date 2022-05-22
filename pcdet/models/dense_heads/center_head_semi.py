@@ -45,7 +45,7 @@ class SeparateHead(nn.Module):
         return ret_dict
 
 
-class CenterHead(nn.Module):
+class CenterHeadSemi(nn.Module):
     def __init__(self, model_cfg, input_channels, num_class, class_names, grid_size, point_cloud_range, voxel_size,
                  predict_boxes_when_training=True):
         super().__init__()
@@ -94,6 +94,7 @@ class CenterHead(nn.Module):
             )
         self.predict_boxes_when_training = predict_boxes_when_training
         self.forward_ret_dict = {}
+        self.model_type = None
         self.build_losses()
 
     def build_losses(self):
@@ -252,6 +253,9 @@ class CenterHead(nn.Module):
         return loss, tb_dict
 
     def generate_predicted_boxes(self, batch_size, pred_dicts):
+        """
+        add all class scores to ret_dict for consistency
+        """
         post_process_cfg = self.model_cfg.POST_PROCESSING
         post_center_limit_range = torch.tensor(post_process_cfg.POST_CENTER_LIMIT_RANGE).cuda().float()
 
@@ -259,6 +263,7 @@ class CenterHead(nn.Module):
             'pred_boxes': [],
             'pred_scores': [],
             'pred_labels': [],
+            'pred_all_scores': [],
         } for k in range(batch_size)]
         for idx, pred_dict in enumerate(pred_dicts):    # for each head
             batch_hm = pred_dict['hm'].sigmoid()
@@ -292,15 +297,18 @@ class CenterHead(nn.Module):
                     final_dict['pred_boxes'] = final_dict['pred_boxes'][selected]
                     final_dict['pred_scores'] = selected_scores
                     final_dict['pred_labels'] = final_dict['pred_labels'][selected]
+                    final_dict['pred_all_scores'] = final_dict['pred_all_scores'][selected]
 
                 ret_dict[k]['pred_boxes'].append(final_dict['pred_boxes'])
                 ret_dict[k]['pred_scores'].append(final_dict['pred_scores'])
                 ret_dict[k]['pred_labels'].append(final_dict['pred_labels'])
+                ret_dict[k]['pred_all_scores'].append(final_dict['pred_all_scores'])
 
-        for k in range(batch_size): # concat head results
+        for k in range(batch_size):
             ret_dict[k]['pred_boxes'] = torch.cat(ret_dict[k]['pred_boxes'], dim=0)
             ret_dict[k]['pred_scores'] = torch.cat(ret_dict[k]['pred_scores'], dim=0)
             ret_dict[k]['pred_labels'] = torch.cat(ret_dict[k]['pred_labels'], dim=0) + 1
+            ret_dict[k]['pred_all_scores'] = torch.cat(ret_dict[k]['pred_all_scores'], dim=0)
 
         return ret_dict
 
@@ -329,28 +337,39 @@ class CenterHead(nn.Module):
         pred_dicts = [] # is a list actually
         for head in self.heads_list:
             pred_dicts.append(head(x))
-
-        if self.training:
-            target_dict = self.assign_targets(
-                data_dict['gt_boxes'], feature_map_size=spatial_features_2d.size()[2:],
-                feature_map_stride=data_dict.get('spatial_features_2d_strides', None)
-            )
-            self.forward_ret_dict['target_dicts'] = target_dict
-
         self.forward_ret_dict['pred_dicts'] = pred_dicts
 
-        if not self.training or self.predict_boxes_when_training:
-            pred_dicts = self.generate_predicted_boxes(
-                data_dict['batch_size'], pred_dicts
-            )
+        if self.model_type == 'origin':
+            if self.training:
+                target_dict = self.assign_targets(
+                    data_dict['gt_boxes'], feature_map_size=spatial_features_2d.size()[2:],
+                    feature_map_stride=data_dict.get('spatial_features_2d_strides', None))
+                self.forward_ret_dict['target_dicts'] = target_dict
 
-            if self.predict_boxes_when_training:
-                rois, roi_scores, roi_labels = self.reorder_rois_for_refining(data_dict['batch_size'], pred_dicts)
-                data_dict['rois'] = rois
-                data_dict['roi_scores'] = roi_scores
-                data_dict['roi_labels'] = roi_labels
-                data_dict['has_class_labels'] = True
-            else:
-                data_dict['final_box_dicts'] = pred_dicts
+            if not self.training or self.predict_boxes_when_training:
+                pred_dicts = self.generate_predicted_boxes(
+                    data_dict['batch_size'], pred_dicts)
+
+        if self.model_type == 'student':
+            if self.training and 'gt_boxes' in data_dict:
+                target_dict = self.assign_targets(
+                    data_dict['gt_boxes'], feature_map_size=spatial_features_2d.size()[2:],
+                    feature_map_stride=data_dict.get('spatial_features_2d_strides', None))
+                self.forward_ret_dict['target_dicts'] = target_dict
+            pred_dicts = self.generate_predicted_boxes(
+                data_dict['batch_size'], pred_dicts)
+        
+        if self.model_type == 'teacher':
+            pred_dicts = self.generate_predicted_boxes(
+                data_dict['batch_size'], pred_dicts)
+        
+        if self.predict_boxes_when_training:
+            rois, roi_scores, roi_labels = self.reorder_rois_for_refining(data_dict['batch_size'], pred_dicts)
+            data_dict['rois'] = rois
+            data_dict['roi_scores'] = roi_scores
+            data_dict['roi_labels'] = roi_labels
+            data_dict['has_class_labels'] = True
+        else:
+            data_dict['final_box_dicts'] = pred_dicts
 
         return data_dict

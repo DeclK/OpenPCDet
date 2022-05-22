@@ -2,27 +2,27 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from .semi_utils import reverse_transform, load_data_to_gpu, filter_boxes
+from pcdet.ops.iou3d_nms.iou3d_nms_utils import boxes_iou3d_gpu
 
 def get_consistency_loss(teacher_boxes, student_boxes):
     center_losses, size_losses, cls_losses = [], [], []
     batch_normalizer = 0
     for teacher_box, student_box in zip(teacher_boxes, student_boxes):  # for each batch
-        teacher_cls_preds = teacher_box['pred_cls_preds'].detach_()
         teacher_box_preds = teacher_box['pred_boxes'].detach_()
-        student_cls_preds = student_box['pred_cls_preds']
         student_box_preds = student_box['pred_boxes']
-        num_teacher_boxes = teacher_box_preds.shape[0]
-        num_student_boxes = student_box_preds.shape[0]
-        if num_teacher_boxes == 0 or num_student_boxes == 0:
+        Nt, Ns = teacher_box_preds.shape[0], student_box_preds.shape[0]
+        if Nt == 0 or Ns == 0:
             batch_normalizer += 1
             continue
+        teacher_cls_preds = teacher_box['pred_scores'].detach_().view(Nt, -1)    # CHK MARK, modify pred_cls_preds
+        student_cls_preds = student_box['pred_scores'].view(Ns, -1)     # view to be compatible with 1 class
 
         teacher_centers, teacher_sizes, teacher_rot = teacher_box_preds[:, :3], teacher_box_preds[:, 3:6], teacher_box_preds[:, [6]]
         student_centers, student_sizes, student_rot = student_box_preds[:, :3], student_box_preds[:, 3:6], student_box_preds[:, [6]]
 
         with torch.no_grad():
-            teacher_class = torch.max(teacher_cls_preds, dim=-1, keepdim=True)[1] # [Nt, 1]
-            student_class = torch.max(student_cls_preds, dim=-1, keepdim=True)[1] # [Ns, 1]
+            teacher_class = teacher_box['pred_labels'].view(Nt, -1) # [Nt, 1]
+            student_class = student_box['pred_labels'].view(Ns, -1) # [Ns, 1]
             not_same_class = (teacher_class != student_class.T).float() # [Nt, Ns]
             MAX_DISTANCE = 1000000
             dist = teacher_centers[:, None, :] - student_centers[None, :, :] # [Nt, Ns, 3]
@@ -43,14 +43,14 @@ def get_consistency_loss(teacher_boxes, student_boxes):
 
         center_loss = (((student_centers - matched_teacher_centers) * matched_teacher_mask).abs().sum()
                        + ((teacher_centers - matched_student_centers) * matched_student_mask).abs().sum()) \
-                      / (num_teacher_boxes + num_student_boxes)
+                      / (Nt + Ns)
         size_loss = F.mse_loss(matched_student_sizes, teacher_sizes, reduction='none')
-        size_loss = (size_loss * matched_student_mask).sum() / num_teacher_boxes
+        size_loss = (size_loss * matched_student_mask).sum() / Nt
 
         # kl_div is not feasible, since we use sigmoid instead of softmax for class prediction
         # cls_loss = F.kl_div(matched_student_cls_preds.log(), teacher_cls_preds, reduction='none')
         cls_loss = F.mse_loss(matched_student_cls_preds, teacher_cls_preds, reduction='none') # use mse loss instead
-        cls_loss = (cls_loss * matched_student_mask).sum() / num_teacher_boxes
+        cls_loss = (cls_loss * matched_student_mask).sum() / Nt
 
         center_losses.append(center_loss)
         size_losses.append(size_loss)
@@ -99,20 +99,26 @@ def sess(teacher_model, student_model,
 
     sup_loss = ret_dict['loss'].mean()
 
-    ld_teacher_boxes = filter_boxes(ld_teacher_batch_dict, cfgs)
-    ld_student_boxes = filter_boxes(ld_student_batch_dict, cfgs)
+    if cfgs.get('FILTER_BOXES', True): # CHK MARK, compatible with centerpoint
+        ld_teacher_boxes = filter_boxes(ld_teacher_batch_dict, cfgs)
+        ld_student_boxes = filter_boxes(ld_student_batch_dict, cfgs)
+    else:
+        ld_teacher_boxes = ld_teacher_batch_dict['final_box_dicts']
+        ld_student_boxes = ld_student_batch_dict['final_box_dicts']
     ld_teacher_boxes = reverse_transform(ld_teacher_boxes, ld_teacher_batch_dict, ld_student_batch_dict)
     ld_center_loss, ld_size_loss, ld_cls_loss = get_consistency_loss(ld_teacher_boxes, ld_student_boxes)
 
     if use_unlabel:
-        ud_teacher_boxes = filter_boxes(ud_teacher_batch_dict, cfgs)
-        ud_student_boxes = filter_boxes(ud_student_batch_dict, cfgs)
+        if cfgs.get('FILTER_BOXES', True):
+            ud_teacher_boxes = filter_boxes(ud_teacher_batch_dict, cfgs)
+            ud_student_boxes = filter_boxes(ud_student_batch_dict, cfgs)
+        else:
+            ud_teacher_boxes = ud_teacher_batch_dict['final_box_dicts']
+            ud_student_boxes = ud_student_batch_dict['final_box_dicts']
         ud_teacher_boxes = reverse_transform(ud_teacher_boxes, ud_teacher_batch_dict, ud_student_batch_dict)
         ud_center_loss, ud_size_loss, ud_cls_loss = get_consistency_loss(ud_teacher_boxes, ud_student_boxes)
     else:
         ud_center_loss, ud_size_loss, ud_cls_loss = 0, 0, 0
-
-
 
     consistency_loss = (ld_center_loss + ud_center_loss) * cfgs.CENTER_WEIGHT \
                        + (ld_size_loss + ud_size_loss) * cfgs.SIZE_WEIGHT \

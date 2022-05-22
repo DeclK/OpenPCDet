@@ -7,22 +7,7 @@ from ..model_utils import model_nms_utils
 from ..model_utils import centernet_utils
 from ...utils import loss_utils
 from .aux_module.cgam import CGAM
-from easydict import EasyDict
 
-MODEL_CFG = dict(
-    CORNER_TYPES=['visible', 'partial_l', 'partial_w'],
-    SHARED_CONV_CHANNEL=64,
-    HEAD_DICT=dict(
-        hm=dict(num_conv=2),
-        corner=dict(out_channels=2, num_conv=2)
-    ),
-    TARGET_ASSIGNER_CONFIG=dict(
-        FEATURE_MAP_STRIDE=8,
-        GAUSSIAN_OVERLAP=0.1,
-        MIN_RADIUS=2
-    )
-)
-MODEL_CFG = EasyDict(MODEL_CFG)
 
 class SeparateHead(nn.Module):
     def __init__(self, input_channels, sep_head_dict, init_bias=-2.19, use_bias=False):
@@ -61,7 +46,7 @@ class SeparateHead(nn.Module):
         return ret_dict
 
 
-class CenterHead(nn.Module):
+class CenterHeadAux(nn.Module):
     def __init__(self, model_cfg, input_channels, num_class, class_names, grid_size, point_cloud_range, voxel_size,
                  predict_boxes_when_training=True):
         super().__init__()
@@ -108,9 +93,18 @@ class CenterHead(nn.Module):
                     use_bias=self.model_cfg.get('USE_BIAS_BEFORE_NORM', False)
                 )
             )
+        self.aux_module = CGAM(model_cfg.CGAM, input_channels, class_names, 
+                                grid_size, voxel_size, point_cloud_range)
+        neck_input_channels = input_channels + model_cfg.CGAM.HEAD_DICT.hm.out_channels  \
+                                    + model_cfg.CGAM.HEAD_DICT.corner.out_channels
+        self.neck_conv2 = nn.Sequential(
+            nn.Conv2d(neck_input_channels, input_channels, 3, stride=1, padding=1),
+            nn.BatchNorm2d(input_channels),
+            nn.ReLU()
+        )
+
         self.predict_boxes_when_training = predict_boxes_when_training
         self.forward_ret_dict = {}
-        self.aux_module = CGAM(MODEL_CFG, input_channels, class_names, grid_size, voxel_size, point_cloud_range)
         self.build_losses()
 
     def build_losses(self):
@@ -343,14 +337,16 @@ class CenterHead(nn.Module):
         spatial_features_2d = data_dict['spatial_features_2d']
         x = self.shared_conv(spatial_features_2d)
 
+        # aux module
+        aux_feat = self.aux_module(data_dict)
+        corner_hm, corner_offset = aux_feat['hm'], aux_feat['corner']
+        neck = torch.cat((x, corner_hm, corner_offset), dim=1)
+        neck = self.neck_conv2(neck)
+        x = spatial_features_2d + neck   # residule structure
+
         pred_dicts = [] # is a list actually
         for head in self.heads_list:
             pred_dicts.append(head(x))
-
-        # debug cgam
-        points = data_dict['points']
-        self.aux_module.assign_targets(data_dict['gt_boxes'], feature_map_size=spatial_features_2d.size()[2:], points=points)
-
 
         if self.training:
             target_dict = self.assign_targets(
