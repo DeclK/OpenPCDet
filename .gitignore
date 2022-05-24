@@ -16,6 +16,7 @@ venv/
 output
 version.py
 data
-tools_simple
 .vscode/
 tempt*
+checkpoints
+.github/
