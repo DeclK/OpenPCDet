@@ -2,8 +2,8 @@ import os
 from pathlib import Path
 
 CONFIG_FILE = './cfgs/once_semi_models/mean_teacher_centerpoint.yaml'
-pretrained_model = '/home/chk/OpenPCDet/checkpoints/centerpoint_epoch_80.pth'
-gpu_index = [5,6,7]
+pretrained_model = '/OpenPCDet/checkpoints/centerpoint_epoch_80.pth'
+gpu_index = [0,1,2]
 
 NUM_GPUS = len(gpu_index)
 CUDA_INDEX = ','.join(map(str, gpu_index))

@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 import numpy as np
-from .semi_utils import reverse_transform, load_data_to_gpu, filter_boxes
+from .semi_utils import filter_by_score_interval, reverse_transform, load_data_to_gpu, filter_boxes
 from pcdet.ops.iou3d_nms.iou3d_nms_utils import boxes_iou3d_gpu
 
 def get_consistency_loss(teacher_boxes, student_boxes):
@@ -105,6 +105,10 @@ def sess(teacher_model, student_model,
     else:
         ld_teacher_boxes = ld_teacher_batch_dict['final_box_dicts']
         ld_student_boxes = ld_student_batch_dict['final_box_dicts']
+    if cfgs.get('FILTER_BY_SCORE_INTERVAL', False):
+        score_interval = cfgs.SCORE_INTERVAL
+        ld_teacher_boxes = filter_by_score_interval(ld_teacher_boxes, score_interval)
+        ld_student_boxes = filter_by_score_interval(ld_student_boxes, score_interval)
     ld_teacher_boxes = reverse_transform(ld_teacher_boxes, ld_teacher_batch_dict, ld_student_batch_dict)
     ld_center_loss, ld_size_loss, ld_cls_loss = get_consistency_loss(ld_teacher_boxes, ld_student_boxes)
 
@@ -115,6 +119,10 @@ def sess(teacher_model, student_model,
         else:
             ud_teacher_boxes = ud_teacher_batch_dict['final_box_dicts']
             ud_student_boxes = ud_student_batch_dict['final_box_dicts']
+        if cfgs.get('FILTER_BY_SCORE_INTERVAL', False):
+            score_interval = cfgs.SCORE_INTERVAL
+            ud_teacher_boxes = filter_by_score_interval(ud_teacher_boxes, score_interval)
+            ud_student_boxes = filter_by_score_interval(ud_student_boxes, score_interval)
         ud_teacher_boxes = reverse_transform(ud_teacher_boxes, ud_teacher_batch_dict, ud_student_batch_dict)
         ud_center_loss, ud_size_loss, ud_cls_loss = get_consistency_loss(ud_teacher_boxes, ud_student_boxes)
     else:

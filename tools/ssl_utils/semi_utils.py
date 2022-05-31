@@ -182,3 +182,20 @@ def construct_pseudo_label(boxes):
         num_gt = num_gt_list[bs_idx]
         gt_boxes[bs_idx, :num_gt, :] = box_list[bs_idx]
     return gt_boxes
+
+def filter_by_score_interval(pred_dict, score_interval):
+    """
+    boxes score <= low or >= high will be kept 
+    """
+    low, high = score_interval
+    B = len(pred_dict)
+    for batch_idx in range(B):
+        cur_pred = pred_dict[batch_idx]
+        cur_score = cur_pred['pred_scores']  # (N,*)
+        if len(cur_score.size()) > 1:
+            cur_score = torch.max(cur_score, dim=1)[0]
+        mask = torch.logical_or(cur_score <= low, cur_score >= high)
+        cur_pred['pred_scores'] = cur_pred['pred_scores'][mask]
+        cur_pred['pred_labels'] = cur_pred['pred_labels'][mask]
+        cur_pred['pred_boxes'] = cur_pred['pred_boxes'][mask]
+    return pred_dict

@@ -58,16 +58,16 @@ OPTIMIZATION:
 
         FILTER_BY_NMS: True
         NMS:
-            SCORE_THRESH: 0.1
+            SCORE_THRESH: 0.0
             NMS_CONFIG:
                 MULTI_CLASSES_NMS: False
                 NMS_TYPE: nms_gpu
-                NMS_THRESH: 0.7
+                NMS_THRESH: 0.01
                 NMS_PRE_MAXSIZE: 500
                 NMS_POST_MAXSIZE: 80
 
-        FILTER_BY_SCORE_THRESHOLD: False
-        #SCORE_THRESHOLD: 0.1
+        FILTER_BY_SCORE_INTERVAL: True
+        SCORE_INTERVAL: [0.1, 0.5]
         FILTER_BY_TOPK: False
         #TOPK: 128
 
