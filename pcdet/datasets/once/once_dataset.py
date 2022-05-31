@@ -155,6 +155,7 @@ class ONCEDataset(DatasetTemplate):
     def get_infos(self, num_workers=4, sample_seq_list=None):
         import concurrent.futures as futures
         import json
+        from tqdm import tqdm
         root_path = self.root_path
         cam_names = self.cam_names
 
@@ -223,7 +224,9 @@ class ONCEDataset(DatasetTemplate):
                 info_this_seq = json.load(f)
             meta_info = info_this_seq['meta_info']
             calib = info_this_seq['calib']
+            pbar = tqdm(total=len(info_this_seq['frames']))
             for f_idx, frame in enumerate(info_this_seq['frames']):
+                pbar.update()
                 frame_id = frame['frame_id']
                 if f_idx == 0:
                     prev_id = None
@@ -284,8 +287,10 @@ class ONCEDataset(DatasetTemplate):
             return seq_infos
 
         sample_seq_list = sample_seq_list if sample_seq_list is not None else self.sample_seq_list
-        with futures.ThreadPoolExecutor(num_workers) as executor:
-            infos = executor.map(process_single_sequence, sample_seq_list)
+        infos = []
+        for sample_seq in sample_seq_list:
+            seq_infos = process_single_sequence(sample_seq)
+            infos.append(seq_infos)
         all_infos = []
         for info in infos:
             all_infos.extend(info)
@@ -317,7 +322,7 @@ class ONCEDataset(DatasetTemplate):
 
             num_obj = gt_boxes.shape[0]
             point_indices = roiaware_pool3d_utils.points_in_boxes_cpu(
-                torch.from_numpy(points[:, 0:3]), torch.from_numpy(gt_boxes)
+                torch.from_numpy(points[:, 0:3]), torch.from_numpy(gt_boxes[:, :7])
             ).numpy()  # (nboxes, npoints)
 
             for i in range(num_obj):

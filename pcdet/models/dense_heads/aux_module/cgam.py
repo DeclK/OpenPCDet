@@ -1,10 +1,9 @@
+import copy
 import torch
 import torch.nn as nn
-import numpy as np
 from torch.nn.init import kaiming_normal_
 from ...model_utils import centernet_utils
-from ....utils import loss_utils, box_utils, common_utils
-from ....ops.roiaware_pool3d.roiaware_pool3d_utils import points_in_boxes_cpu   # or we can try gpu?
+from ....utils import loss_utils, box_utils
 
 class SeparateHead(nn.Module):
     def __init__(self, input_channels, sep_head_dict, init_bias=-2.19, use_bias=False):
@@ -50,7 +49,7 @@ class CGAM(nn.Module):
         self.point_cloud_range = point_cloud_range
         self.voxel_size = voxel_size
         self.class_names = class_names
-        self.corner_types = model_cfg.CORNER_TYPES
+        self.corner_types = len(model_cfg.CORNER_TYPES)
         self.forward_ret_dict = {}
 
         self.shared_conv = nn.Sequential(
@@ -59,86 +58,67 @@ class CGAM(nn.Module):
             nn.ReLU()
         )
 
-        # build seperate head
-        head_dict = model_cfg.HEAD_DICT
-        head_dict['hm'].update(dict(out_channels=len(model_cfg.CORNER_TYPES)))
-        assert len(model_cfg.CORNER_TYPES) == 3, 'only 3 types of corners are implemented'
-        self.seperate_head = SeparateHead(
-            input_channels=model_cfg.SHARED_CONV_CHANNEL,
-            sep_head_dict=head_dict,
-            init_bias=-2.19,
-            use_bias=True
-        )
+        self.head_list = nn.ModuleList()
+        self.head_dict = model_cfg.HEAD_DICT
+        for _ in range(self.corner_types):  #
+            cur_head_dict = copy.deepcopy(self.head_dict)
+            cur_head_dict['hm']['out_channels'] = len(class_names)
+            seperate_head = SeparateHead(
+                input_channels=model_cfg.SHARED_CONV_CHANNEL,
+                sep_head_dict=cur_head_dict,
+                init_bias=-2.19,
+                use_bias=True
+            )
+            self.head_list.append(seperate_head)
         self.build_losses()
 
     def build_losses(self):
         self.add_module('hm_loss_func', loss_utils.FocalLossCenterNet())
         self.add_module('reg_loss_func', loss_utils.RegLossCenterNet())
 
-    def corner_selection(self, corners_xy, gt_boxes, points, pts_of_box):
+    def corner_selection(self, corners, gt_sparse_corner):
         """
-        for single sample, select corners of gt
+        For a single sample, select corners of gt boxes, not used
+        input:
+            corners: (M, 4, 3)
+            gt_sparse_corner: (M, 3)
+        return: 
+            ret_corners: (3, M, 3), the first 3 means 3 types of corners
         """
-        INDEX = [(2, 3, 1), (3, 0, 2), (0, 1, 3), (1, 2, 0)]    # 按照逆时针魔改
-        M = len(gt_boxes)
-        c_invis = gt_boxes.new_zeros(M, 2)
-        c_part_vis_l = gt_boxes.new_zeros(M, 2)
-        c_part_vis_w = gt_boxes.new_zeros(M, 2)
-        for box_idx in range(M):
-            cur_box = gt_boxes[box_idx, :7]
-            points_in_box = points[pts_of_box == box_idx, :3]  # (N, 3)
-            # canonical transformation
-            points_in_box = points_in_box - cur_box[:3]
-            points_in_box = common_utils.rotate_points_along_z(
-                points_in_box.unsqueeze(0), angle=-cur_box[6:7]).squeeze(0)
-            x, y = points_in_box[:, 0], points_in_box[:, 1]
-            q0 = torch.sum(torch.logical_and(x > 0, y > 0)).item()
-            q1 = torch.sum(torch.logical_and(x > 0, y < 0)).item()
-            q2 = torch.sum(torch.logical_and(x < 0, y < 0)).item()
-            q3 = torch.sum(torch.logical_and(x < 0, y > 0)).item()
-            q = [q0, q1, q2, q3]
-            sub_q = [q3 + q0 + q1, 
-                     q0 + q1 + q2,
-                     q1 + q2 + q3,
-                     q2 + q3 + q0]
-            valid_q = sum([1 if qi > 0 else 0 for qi in q])
-            if valid_q > 2:
-                max_i = np.argmax(sub_q)
-            else: max_i = np.argmax(q)
-            c_invis[box_idx] = corners_xy[box_idx, INDEX[max_i][0]]
-            c_part_vis_l[box_idx] = corners_xy[box_idx, INDEX[max_i][1]]
-            c_part_vis_w[box_idx] = corners_xy[box_idx, INDEX[max_i][2]] 
-        return c_invis, c_part_vis_l, c_part_vis_w
+        INDEX = torch.tensor([(0, 1, 3), (1, 0, 2), (2, 3, 1), (3, 2, 0)])
+        INDEX = INDEX.to(corners.device)
+        M = len(gt_sparse_corner)
+        # finde sparse corner index
+        dist = corners - gt_sparse_corner.unsqueeze(1)
+        dist = torch.norm(dist, dim=2)  # (M, 4)
+        sparse_index = torch.argmin(dist, dim=1)    # (M,)
+        all_index = INDEX[sparse_index].unsqueeze(2).expand((M, 3, 3)) # (M, 3, 3)
+        ret_corners = torch.gather(corners, index=all_index, dim=1)    # (M, 3, 3)
+        return ret_corners.permute(1, 0, 2).contiguous()
 
-    def assign_corners_of_single_sample(self, corner_types, gt_boxes, feature_map_size, 
-        feature_map_stride, points, num_max_objs=500, gaussian_overlap=0.1, min_radius=2):
+    def assign_corners_of_single_sample(self, gt_boxes, sub_corner, feature_map_size,
+        feature_map_stride, num_max_objs=500, gaussian_overlap=0.1, min_radius=2):
         """
-        1. build placeholder heatmap
-        2. assign heatmap for boxes in this sample
+        Input:
+            gt_boxes: (N, 7+C)
+            sub_corner: (N, 3)
+        Return:
+            heatmap & corner offset for a single sample of a single head
         """
-        C = len(corner_types)
-        heatmap = gt_boxes.new_zeros(C, feature_map_size[1], feature_map_size[0])
-        corner_offset = gt_boxes.new_zeros(C, num_max_objs, 2)
-        inds = gt_boxes.new_zeros(C, num_max_objs).long()
-        mask = gt_boxes.new_zeros(C, num_max_objs).long()
-        # get corner points and foreground points
-        corners = box_utils.boxes_to_corners_3d(gt_boxes[:, :7])  # (M, 8, 3)
-        corners_xy = corners[:, :4, :2]    # (M, 4, 2)
-        pts_in_flag = points_in_boxes_cpu(points[:, :3], gt_boxes[:, :7])
-        in_label, pts_of_box = pts_in_flag.max(0)
-        fg_pts, pts_of_box = points[in_label.bool()], pts_of_box[in_label.bool()]
+        N = len(self.class_names)
+        heatmap = gt_boxes.new_zeros(N, feature_map_size[1], feature_map_size[0])
+        corner_offset = gt_boxes.new_zeros(num_max_objs, 2)
+        inds = gt_boxes.new_zeros(num_max_objs).long()
+        mask = gt_boxes.new_zeros(num_max_objs).long()
 
-        corners_i, corners_l, corners_w = self.corner_selection(corners_xy, gt_boxes, fg_pts, pts_of_box)
-        sub_corner = torch.stack([corners_i, corners_l, corners_w], dim=0) # (3, M, 2)
-
-        x, y = sub_corner[:, :, 0], sub_corner[:, :, 1]
+        x, y = sub_corner[:, 0], sub_corner[:, 1]
         coord_x = (x - self.point_cloud_range[0]) / self.voxel_size[0] / feature_map_stride
         coord_y = (y - self.point_cloud_range[1]) / self.voxel_size[1] / feature_map_stride
         coord_x = torch.clamp(coord_x, min=0, max=feature_map_size[0] - 0.5)  # bugfixed: 1e-6 does not work for center.int()
         coord_y = torch.clamp(coord_y, min=0, max=feature_map_size[1] - 0.5)  #
-        center = torch.stack((coord_x, coord_y), dim=-1)    # (3, M, 2)
+        center = torch.stack((coord_x, coord_y), dim=-1)                # (M, 2)
         center_int = center.int()
-        center_int_float = center_int.float()   # (3, M, 2)
+        center_int_float = center_int.float()
 
         dx, dy = gt_boxes[:, 3], gt_boxes[:, 4]
         dx = dx / self.voxel_size[0] / feature_map_stride
@@ -150,65 +130,64 @@ class CGAM(nn.Module):
         for k in range(min(num_max_objs, gt_boxes.shape[0])):
             if dx[k] <= 0 or dy[k] <= 0:
                 continue
-            for i in range(C):
-                if not (0 <= center_int[i][k][0] <= feature_map_size[0] and 0 <= center_int[i][k][1] <= feature_map_size[1]):
-                    continue    # insurance
-                centernet_utils.draw_gaussian_to_heatmap(heatmap[i], center[i][k], radius[k].item())
-                corner_offset[i][k] = center[i][k] - center_int_float[i][k].float()    # use .float redundent!
-                inds[i][k] = center_int[i][k][1] * feature_map_size[0] + center_int[i][k][0]
-                mask[i][k] = 1
+            if not (0 <= center_int[k, 0] <= feature_map_size[0] and 0 <= center_int[k, 1] <= feature_map_size[1]):
+                continue    # insurance
+            cur_class_id = (gt_boxes[k, -1] - 1).long()
+            centernet_utils.draw_gaussian_to_heatmap(heatmap[cur_class_id], center[k], radius[k].item())
+            corner_offset[k] = center[k] - center_int_float[k]
+            inds[k] = center_int[k, 1] * feature_map_size[0] + center_int[k, 0]
+            mask[k] = 1
 
         return heatmap, corner_offset, inds, mask
 
-    def assign_targets(self, gt_boxes, feature_map_size, points):
+    def assign_targets(self, gt_boxes, feature_map_size):
         """
-        return: 
-            heatmap: (B, 3, H, W)
-            center_offset: (B, 3, K, 2), K is num_max_objs
-            inds: (B, 3, K)
-            masks: (B, 3, K)
+        return: a dict of list, each member of list contains results for single corner head
+            heatmap: (B, N, H, W), N is num_classes
+            center_offset: (B, K, 2), K is num_max_objs
+            inds: (B, K)
+            masks: (B, K)
+            corners: debug use
         """
         feature_map_size = feature_map_size[::-1]  # [H, W] ==> [x, y]
         target_assigner_cfg = self.model_cfg.TARGET_ASSIGNER_CONFIG
-        ret_dict = {}
-
-        all_names = np.array(['none', *self.class_names])
         batch_size = gt_boxes.shape[0]
-        heatmap_list, corner_offset_list, inds_list, masks_list = [], [], [], []
-        for bs_idx in range(batch_size):
-            cur_gt_boxes = gt_boxes[bs_idx]
-            p_idx = torch.nonzero(points[:, 0] == bs_idx).view(-1)
-            cur_points = points[p_idx, 1:]
-            gt_class_names = all_names[cur_gt_boxes[:, -1].cpu().long().numpy()]
-        
-            gt_boxes_single_head = []
-            for idx, name in enumerate(gt_class_names): # filter empty gt_boxes
-                if name not in self.class_names:
-                    continue
-                temp_box = cur_gt_boxes[idx]
-                gt_boxes_single_head.append(temp_box[None, :])
+        ret_dict = {
+            'heatmaps': [],
+            'corner_offsets': [],
+            'inds': [],
+            'masks': [],
+        }
 
-            if len(gt_boxes_single_head) == 0:
-                gt_boxes_single_head = cur_gt_boxes[:0, :]  # return an empty tensor
-            else:
-                gt_boxes_single_head = torch.cat(gt_boxes_single_head, dim=0)
+        for idx in range(self.corner_types):
+            heatmap_list, corner_offset_list, inds_list, masks_list = [], [], [], []
+            for bs_idx in range(batch_size):
+                cur_gt_boxes = gt_boxes[bs_idx]             # (M, 8)
+                # filter empty gt
+                non_empty_mask = cur_gt_boxes[:, -1].int() != 0
+                gt_boxes_single_head = cur_gt_boxes[non_empty_mask]
 
-            heatmap, corner_offset, inds, mask = self.assign_corners_of_single_sample(
-                corner_types=self.corner_types, gt_boxes=gt_boxes_single_head.cpu(),
-                feature_map_size=feature_map_size, feature_map_stride=target_assigner_cfg.FEATURE_MAP_STRIDE,
-                gaussian_overlap=target_assigner_cfg.GAUSSIAN_OVERLAP,
-                min_radius=target_assigner_cfg.MIN_RADIUS,
-                points=cur_points.cpu()
-            )
-            heatmap_list.append(heatmap.to(gt_boxes_single_head.device))
-            corner_offset_list.append(corner_offset.to(gt_boxes_single_head.device))
-            inds_list.append(inds.to(gt_boxes_single_head.device))
-            masks_list.append(mask.to(gt_boxes_single_head.device))
+                # build sub corner for single head
+                corners = box_utils.boxes_to_corners_3d(gt_boxes_single_head)       # (M, 8, 3)
+                sub_corner = corners[:, idx]    # (M, 3)
 
-        ret_dict['heatmap'] = torch.stack(heatmap_list, dim=0)   # stack batch
-        ret_dict['corner_offset'] = torch.stack(corner_offset_list, dim=0)
-        ret_dict['inds'] = torch.stack(inds_list, dim=0)
-        ret_dict['masks'] = torch.stack(masks_list, dim=0)
+                heatmap, corner_offset, inds, mask = self.assign_corners_of_single_sample(
+                    gt_boxes=gt_boxes_single_head.cpu(),
+                    sub_corner=sub_corner.cpu(),
+                    feature_map_size=feature_map_size, 
+                    feature_map_stride=target_assigner_cfg.FEATURE_MAP_STRIDE,
+                    gaussian_overlap=target_assigner_cfg.GAUSSIAN_OVERLAP,
+                    min_radius=target_assigner_cfg.MIN_RADIUS,
+                )
+                heatmap_list.append(heatmap.to(gt_boxes_single_head.device))
+                corner_offset_list.append(corner_offset.to(gt_boxes_single_head.device))
+                inds_list.append(inds.to(gt_boxes_single_head.device))
+                masks_list.append(mask.to(gt_boxes_single_head.device))
+
+            ret_dict['heatmaps'].append(torch.stack(heatmap_list, dim=0) ) # stack batch
+            ret_dict['corner_offsets'].append(torch.stack(corner_offset_list, dim=0))
+            ret_dict['inds'].append(torch.stack(inds_list, dim=0))
+            ret_dict['masks'].append(torch.stack(masks_list, dim=0))
         return ret_dict
 
     def sigmoid(self, x):
@@ -216,46 +195,56 @@ class CGAM(nn.Module):
         return y
 
     def get_loss(self):
-        pred_dict = self.forward_ret_dict['pred_dict']
-        target_dict = self.forward_ret_dict['target_dict']
+        pred_dicts = self.forward_ret_dict['pred_dicts']
+        target_dicts = self.forward_ret_dict['target_dicts']
         tb_dict = {}
+        loss = 0
 
-        if not self.model_cfg.HM_NORMALIZATION:
-            pred_dict['hm'] = self.sigmoid(pred_dict['hm'])
-        hm_loss = self.hm_loss_func(pred_dict['hm'], target_dict['heatmap'])
-        hm_loss *= self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['cls_weight']
+        for idx, pred_dict in enumerate(pred_dicts):
+            if not self.model_cfg.HM_NORMALIZATION:
+                pred_dict['hm'] = self.sigmoid(pred_dict['hm'])
 
-        offset_target = target_dict['corner_offset']
-        C = offset_target.size(1)
-        reg_loss = 0
-        for i in range(C):  # for each type corner
-            mask_i = target_dict['masks'][:, i]
-            ind_i = target_dict['inds'][:, i]
-            offset_target_i = offset_target[:, i]
-            reg_loss += self.reg_loss_func(pred_dict['corner'], mask_i, ind_i, offset_target_i)
-        loc_loss = (reg_loss * reg_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['code_weights'])).sum()
-        loc_loss = loc_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
+            pred_hm = pred_dict['hm']
+            target_hm = target_dicts['heatmaps'][idx]
+            hm_loss = self.hm_loss_func(pred_hm, target_hm)
+            hm_loss *= self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['cls_weight']
 
-        loss = hm_loss + loc_loss
-        tb_dict['corner_hm_loss'] = hm_loss.item()
-        tb_dict['corner_offset_loss'] = loc_loss.item()
+            pred_offset = pred_dict['corner']
+            target_offset = target_dicts['corner_offsets'][idx]
+            mask = target_dicts['masks'][idx]
+            ind = target_dicts['inds'][idx]
+            reg_loss = self.reg_loss_func(pred_offset, mask, ind, target_offset)
+            code_weights = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['code_weights']
+            loc_loss = (reg_loss * reg_loss.new_tensor(code_weights)).sum()
+            loc_loss *= self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
+
+            loss += hm_loss + loc_loss
+            tb_dict[f'corner_hm_loss_{idx}'] = hm_loss.item()
+            tb_dict[f'corner_offset_loss_{idx}'] = loc_loss.item()
         return loss, tb_dict
 
     def forward(self, data_dict):
         spatial_features_2d = data_dict['spatial_features_2d']
         x = self.shared_conv(spatial_features_2d)
 
-        pred_dict = self.seperate_head(x)
+        pred_dicts = []
+        for head in self.head_list:
+            pred_dicts.append(head(x))
         
         if self.model_cfg.HM_NORMALIZATION:
-            pred_dict['hm'] = self.sigmoid(pred_dict['hm'])
-        self.forward_ret_dict['pred_dict'] = pred_dict
+            for pred_dict in pred_dicts:
+                pred_dict['hm'] = self.sigmoid(pred_dict['hm'])
+        self.forward_ret_dict['pred_dicts'] = pred_dicts
 
         if self.training:
-            target_dict = self.assign_targets(
-                data_dict['gt_boxes'], feature_map_size=spatial_features_2d.size()[2:],
-                points=data_dict['points']
-            )
-            self.forward_ret_dict['target_dict'] = target_dict
+            target_dicts = self.assign_targets(
+                gt_boxes=data_dict['gt_boxes'], 
+                feature_map_size=spatial_features_2d.size()[2:])
+            self.forward_ret_dict['target_dicts'] = target_dicts
 
-        return pred_dict
+        merge_feat_list = []    # concat feat to merge with bev
+        for pred_dict in pred_dicts:
+            for _, feat in pred_dict.items():
+                merge_feat_list.append(feat)
+        merge_feat = torch.cat(merge_feat_list, dim=1)
+        return merge_feat

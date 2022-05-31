@@ -296,3 +296,36 @@ def boxes3d_nearest_bev_iou(boxes_a, boxes_b):
     boxes_bev_b = boxes3d_lidar_to_aligned_bev_boxes(boxes_b)
 
     return boxes_iou_normal(boxes_bev_a, boxes_bev_b)
+
+
+def corner_selection(gt_boxes, fg_points, pts_of_box):
+    """
+    for single frame, select the sparse corner of a box
+    """
+    gt_boxes, is_numpy = common_utils.check_numpy_to_torch(gt_boxes)
+    fg_points, is_numpy = common_utils.check_numpy_to_torch(fg_points)
+    M = len(gt_boxes)
+    sparse_corner = gt_boxes.new_zeros((M, 1)).int()
+    for box_idx in range(M):
+        cur_box = gt_boxes[box_idx, :7]
+        points_in_box = fg_points[pts_of_box == box_idx, :3]  # (N, 3)
+        # canonical transformation
+        points_in_box = points_in_box - cur_box[:3]
+        points_in_box = common_utils.rotate_points_along_z(
+            points_in_box.unsqueeze(0), angle=-cur_box[6:7]).squeeze(0)
+        x, y = points_in_box[:, 0], points_in_box[:, 1]
+        q0 = torch.sum(torch.logical_and(x > 0, y > 0)).item()
+        q1 = torch.sum(torch.logical_and(x > 0, y < 0)).item()
+        q2 = torch.sum(torch.logical_and(x < 0, y < 0)).item()
+        q3 = torch.sum(torch.logical_and(x < 0, y > 0)).item()
+        q = [q0, q1, q2, q3]
+        sub_q = [q3 + q0 + q1, 
+                 q0 + q1 + q2,
+                 q1 + q2 + q3,
+                 q2 + q3 + q0]
+        valid_q = sum([1 if qi > 0 else 0 for qi in q])
+        if valid_q > 2:
+            min_i = np.argmin(sub_q)
+        else: min_i = np.argmin(q)
+        sparse_corner[box_idx] = min_i
+    return sparse_corner.numpy() if is_numpy else sparse_corner

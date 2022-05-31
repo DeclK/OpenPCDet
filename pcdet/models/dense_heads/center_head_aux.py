@@ -95,10 +95,12 @@ class CenterHeadAux(nn.Module):
             )
         self.aux_module = CGAM(model_cfg.CGAM, input_channels, class_names, 
                                 grid_size, voxel_size, point_cloud_range)
-        neck_input_channels = input_channels + model_cfg.CGAM.HEAD_DICT.hm.out_channels  \
+
+        # conv for concat
+        neck_input = input_channels + model_cfg.CGAM.HEAD_DICT.hm.out_channels  \
                                     + model_cfg.CGAM.HEAD_DICT.corner.out_channels
-        self.neck_conv2 = nn.Sequential(
-            nn.Conv2d(neck_input_channels, input_channels, 3, stride=1, padding=1),
+        self.neck_conv = nn.Sequential(
+            nn.Conv2d(neck_input, input_channels, 3, stride=1, padding=1),
             nn.BatchNorm2d(input_channels),
             nn.ReLU()
         )
@@ -335,14 +337,13 @@ class CenterHeadAux(nn.Module):
 
     def forward(self, data_dict):
         spatial_features_2d = data_dict['spatial_features_2d']
-        x = self.shared_conv(spatial_features_2d)
-
         # aux module
         aux_feat = self.aux_module(data_dict)
         corner_hm, corner_offset = aux_feat['hm'], aux_feat['corner']
-        neck = torch.cat((x, corner_hm, corner_offset), dim=1)
-        neck = self.neck_conv2(neck)
-        x = spatial_features_2d + neck   # residule structure
+        neck = torch.cat((spatial_features_2d, corner_hm, corner_offset), dim=1)
+        spatial_features_2d = self.neck_conv(neck)
+        
+        x = self.shared_conv(spatial_features_2d)
 
         pred_dicts = [] # is a list actually
         for head in self.heads_list:
