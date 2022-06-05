@@ -9,8 +9,8 @@ from ...utils import loss_utils
 from .aux_module.cgam import CGAM
 
 
-class SeparateHead(nn.Module):
-    def __init__(self, input_channels, sep_head_dict, init_bias=-2.19, use_bias=False):
+class SeparateHeadAux(nn.Module):
+    def __init__(self, input_channels, aux_channels, sep_head_dict, init_bias=-2.19, use_bias=False):
         super().__init__()
         self.sep_head_dict = sep_head_dict
 
@@ -21,7 +21,7 @@ class SeparateHead(nn.Module):
             fc_list = []
             for k in range(num_conv - 1):
                 fc_list.append(nn.Sequential(
-                    nn.Conv2d(input_channels, input_channels, kernel_size=3, stride=1, padding=1, bias=use_bias),
+                    nn.Conv2d(input_channels + aux_channels, input_channels, kernel_size=3, stride=1, padding=1, bias=use_bias),
                     nn.BatchNorm2d(input_channels),
                     nn.ReLU()
                 ))
@@ -71,6 +71,12 @@ class CenterHeadAux(nn.Module):
         total_classes = sum([len(x) for x in self.class_names_each_head])
         assert total_classes == len(self.class_names), f'class_names_each_head={self.class_names_each_head}'
 
+        # CGAM module
+        self.aux_module = CGAM(model_cfg.CGAM, input_channels, class_names, 
+                                grid_size, voxel_size, point_cloud_range)
+        # adjust input channels for aux feature
+        aux_channels = self.aux_module.corner_types * num_class  \
+                     + self.aux_module.corner_types * model_cfg.CGAM.HEAD_DICT.corner.out_channels
         self.shared_conv = nn.Sequential(
             nn.Conv2d(
                 input_channels, self.model_cfg.SHARED_CONV_CHANNEL, 3, stride=1, padding=1,
@@ -86,24 +92,14 @@ class CenterHeadAux(nn.Module):
             cur_head_dict = copy.deepcopy(self.separate_head_cfg.HEAD_DICT)
             cur_head_dict['hm'] = dict(out_channels=len(cur_class_names), num_conv=self.model_cfg.NUM_HM_CONV)
             self.heads_list.append(
-                SeparateHead(
+                SeparateHeadAux(
                     input_channels=self.model_cfg.SHARED_CONV_CHANNEL,
+                    aux_channels=aux_channels,
                     sep_head_dict=cur_head_dict,
                     init_bias=-2.19,
                     use_bias=self.model_cfg.get('USE_BIAS_BEFORE_NORM', False)
                 )
             )
-        self.aux_module = CGAM(model_cfg.CGAM, input_channels, class_names, 
-                                grid_size, voxel_size, point_cloud_range)
-
-        # conv for concat
-        neck_input = input_channels + model_cfg.CGAM.HEAD_DICT.hm.out_channels  \
-                                    + model_cfg.CGAM.HEAD_DICT.corner.out_channels
-        self.neck_conv = nn.Sequential(
-            nn.Conv2d(neck_input, input_channels, 3, stride=1, padding=1),
-            nn.BatchNorm2d(input_channels),
-            nn.ReLU()
-        )
 
         self.predict_boxes_when_training = predict_boxes_when_training
         self.forward_ret_dict = {}
@@ -337,15 +333,11 @@ class CenterHeadAux(nn.Module):
 
     def forward(self, data_dict):
         spatial_features_2d = data_dict['spatial_features_2d']
-        # aux module
-        aux_feat = self.aux_module(data_dict)
-        corner_hm, corner_offset = aux_feat['hm'], aux_feat['corner']
-        neck = torch.cat((spatial_features_2d, corner_hm, corner_offset), dim=1)
-        spatial_features_2d = self.neck_conv(neck)
-        
+        aux_feat = self.aux_module(data_dict)   # aux module
         x = self.shared_conv(spatial_features_2d)
+        x = torch.cat((x, aux_feat), dim=1)
 
-        pred_dicts = [] # is a list actually
+        pred_dicts = []
         for head in self.heads_list:
             pred_dicts.append(head(x))
 

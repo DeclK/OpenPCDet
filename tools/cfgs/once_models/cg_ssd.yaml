@@ -94,11 +94,11 @@ MODEL:
             BOX_CODER: ResidualCoder
 
         CGAM: # corner-guided auxiliary module
-            CORNER_TYPES: ['visible', 'partial_l', 'partial_w']
+            CORNER_TYPES: ['LT', 'RT', 'RD', 'LD']
             SHARED_CONV_CHANNEL: 64
 
             HEAD_DICT: {
-                'hm':{'out_channels': 3, 'num_conv': 2},    # out_channels MUST == len(CORNER_TYPES)
+                'hm':{'num_conv': 2},
                 'corner': {'out_channels': 2, 'num_conv': 2},
             }
             HM_NORMALIZATION: True
