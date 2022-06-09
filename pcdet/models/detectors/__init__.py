@@ -17,6 +17,7 @@ from .semi_centerpoint import SemiCenterPoint
 from .cg_ssd import CGSSD
 from .semi_cgssd import SemiCGSSD
 from .centerpoint_aux import CenterPointAux
+from .semi_centerpoint_aux import SemiCenterPointAux
 
 __all__ = {
     'Detector3DTemplate': Detector3DTemplate,
@@ -38,6 +39,7 @@ __all__ = {
     'CGSSD': CGSSD,
     'SemiCGSSD': SemiCGSSD,
     'CenterPointAux': CenterPointAux,
+    'SemiCenterPointAux': SemiCenterPointAux,
 }
 
 

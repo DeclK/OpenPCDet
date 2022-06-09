@@ -1,7 +1,7 @@
 import os
 
-CONFIG_FILE = './cfgs/once_semi_models/mean_teacher_centerpoint.yaml'
-pretrained_model = '/home/chk/OpenPCDet/checkpoints/centerpoint_epoch_80.pth'
+CONFIG_FILE = './cfgs/once_semi_models/mean_teacher_centerpoint_aux.yaml'
+pretrained_model = '../checkpoints/centerpoint_aux_epoch_74.pth'
 # CONFIG_FILE = './cfgs/once_semi_models/mean_teacher_second.yaml'
 # pretrained_model = '/OpenPCDet/checkpoints/second_epoch_80.pth'
 gpu_index = [1]
