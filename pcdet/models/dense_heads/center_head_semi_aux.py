@@ -46,7 +46,7 @@ class SeparateHeadAux(nn.Module):
         return ret_dict
 
 
-class CenterHeadAux(nn.Module):
+class CenterHeadSemiAux(nn.Module):
     def __init__(self, model_cfg, input_channels, num_class, class_names, grid_size, point_cloud_range, voxel_size,
                  predict_boxes_when_training=True):
         super().__init__()
@@ -103,6 +103,7 @@ class CenterHeadAux(nn.Module):
 
         self.predict_boxes_when_training = predict_boxes_when_training
         self.forward_ret_dict = {}
+        self.model_type = None
         self.build_losses()
 
     def build_losses(self):
@@ -340,28 +341,40 @@ class CenterHeadAux(nn.Module):
         pred_dicts = []
         for head in self.heads_list:
             pred_dicts.append(head(x))
-
-        if self.training:
-            target_dict = self.assign_targets(
-                data_dict['gt_boxes'], feature_map_size=spatial_features_2d.size()[2:],
-                feature_map_stride=data_dict.get('spatial_features_2d_strides', None)
-            )
-            self.forward_ret_dict['target_dicts'] = target_dict
-
         self.forward_ret_dict['pred_dicts'] = pred_dicts
 
-        if not self.training or self.predict_boxes_when_training:
-            pred_dicts = self.generate_predicted_boxes(
-                data_dict['batch_size'], pred_dicts
-            )
+        if self.model_type == 'origin':
+            if self.training:
+                target_dict = self.assign_targets(
+                    data_dict['gt_boxes'], feature_map_size=spatial_features_2d.size()[2:],
+                    feature_map_stride=data_dict.get('spatial_features_2d_strides', None))
+                self.forward_ret_dict['target_dicts'] = target_dict
 
-            if self.predict_boxes_when_training:
-                rois, roi_scores, roi_labels = self.reorder_rois_for_refining(data_dict['batch_size'], pred_dicts)
-                data_dict['rois'] = rois
-                data_dict['roi_scores'] = roi_scores
-                data_dict['roi_labels'] = roi_labels
-                data_dict['has_class_labels'] = True
-            else:
-                data_dict['final_box_dicts'] = pred_dicts
+            if not self.training or self.predict_boxes_when_training:
+                pred_dicts = self.generate_predicted_boxes(
+                    data_dict['batch_size'], pred_dicts)
+
+        if self.model_type == 'student':
+            if self.training and 'gt_boxes' in data_dict:
+                target_dict = self.assign_targets(
+                    data_dict['gt_boxes'], feature_map_size=spatial_features_2d.size()[2:],
+                    feature_map_stride=data_dict.get('spatial_features_2d_strides', None))
+                self.forward_ret_dict['target_dicts'] = target_dict
+            pred_dicts = self.generate_predicted_boxes(
+                data_dict['batch_size'], pred_dicts)
+        
+        if self.model_type == 'teacher':
+            pred_dicts = self.generate_predicted_boxes(
+                data_dict['batch_size'], pred_dicts)
+        
+        if self.predict_boxes_when_training:
+            rois, roi_scores, roi_labels = self.reorder_rois_for_refining(data_dict['batch_size'], pred_dicts)
+            data_dict['rois'] = rois
+            data_dict['roi_scores'] = roi_scores
+            data_dict['roi_labels'] = roi_labels
+            data_dict['has_class_labels'] = True
+        else:
+            data_dict['final_box_dicts'] = pred_dicts
 
         return data_dict
+

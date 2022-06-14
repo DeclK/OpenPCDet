@@ -152,13 +152,13 @@ def _topk(scores, K=40):
         ...
     """
     batch, num_class, height, width = scores.size()
-
+    # for each batch, each class, aim to get topk_inds
     topk_scores, topk_inds = torch.topk(scores.flatten(2, 3), K)    # (B, C, K)
 
     topk_inds = topk_inds % (height * width)
     topk_ys = (topk_inds // width).float()
     topk_xs = (topk_inds % width).int().float()
-
+    # for each batch, all classes
     topk_score, topk_ind = torch.topk(topk_scores.view(batch, -1), K)   # (B, K)
     topk_classes = (topk_ind // K).int()
     topk_inds = _gather_feat(topk_inds.view(batch, -1, 1), topk_ind).view(batch, K)
@@ -169,7 +169,7 @@ def _topk(scores, K=40):
 
 
 def decode_bbox_from_heatmap(heatmap, rot_cos, rot_sin, center, center_z, dim,
-                             point_cloud_range=None, voxel_size=None, feature_map_stride=None, vel=None, K=100,
+                             point_cloud_range=None, voxel_size=None, feature_map_stride=None, vel=None, iou=None, K=100,
                              circle_nms=False, score_thresh=None, post_center_limit_range=None):
     batch_size, num_class, _, _ = heatmap.size()
 
@@ -209,6 +209,10 @@ def decode_bbox_from_heatmap(heatmap, rot_cos, rot_sin, center, center_z, dim,
 
     if score_thresh is not None:
         mask &= (final_scores > score_thresh)
+    if iou is not None: # CHK MARK, rectify score
+        iou = _transpose_and_gather_feat(iou, inds).view(batch_size, K)
+        iou = (iou + 1) * 0.5
+        scores *= torch.pow(iou, 4)
 
     ret_pred_dicts = []
     for k in range(batch_size):
@@ -235,3 +239,171 @@ def decode_bbox_from_heatmap(heatmap, rot_cos, rot_sin, center, center_z, dim,
             'pred_all_scores': cur_all_scores,
         })
     return ret_pred_dicts
+
+
+def generate_dense_boxes(pred_dict, feature_map_stride, voxel_size, point_cloud_range):
+    """
+    Generate boxes for single sample pixel-wise
+    Input pred_dict:
+        center      (B, 2, H, W)
+        center_z    (B, 1, H, W)
+        dim         (B, 3, H, W)
+        cos/sin     (B, 1, H, W)
+    Return:
+        (B, 7, H, W)
+    """
+    batch_offset = pred_dict['center']
+    batch_z = pred_dict['center_z']
+    batch_dim = torch.clamp(pred_dict['dim'], min=-3, max=3).exp()  # avoid large gradient
+    batch_rot_cos = pred_dict['rot'][:, 0].unsqueeze(dim=1)
+    batch_rot_sin = pred_dict['rot'][:, 1].unsqueeze(dim=1)
+    batch_rot = torch.atan2(batch_rot_sin, batch_rot_cos)
+
+    B, _, H, W = batch_dim.size()
+    ys, xs = torch.meshgrid([torch.arange(0, H), torch.arange(0, W)])
+    ys = ys.view(1, 1, H, W).repeat(B, 1, 1, 1).to(batch_dim)
+    xs = xs.view(1, 1, H, W).repeat(B, 1, 1, 1).to(batch_dim)
+    xs = xs + batch_offset[:, 0:1]    # (B, 1, H, W)
+    ys = ys + batch_offset[:, 1:2]
+    xs = xs * feature_map_stride * voxel_size[0] + point_cloud_range[0]
+    ys = ys * feature_map_stride * voxel_size[1] + point_cloud_range[1]
+
+    pred_boxes = torch.cat((xs, ys, batch_z, batch_dim, batch_rot), dim=1)
+    return pred_boxes
+
+# Copy from PillarNet
+
+def generate_dense_boxes_pillarnet(pred_dict, feature_map_stride, voxel_size, point_cloud_range):
+    batch_dim = torch.exp(torch.clamp(pred_dict['dim'].clone(), min=-3, max=3))
+    batch_dim = batch_dim.permute(0, 2, 3, 1).contiguous()
+    batch_rot = pred_dict['rot'].clone().permute(0, 2, 3, 1).contiguous()
+    batch_rots = batch_rot[..., 1:2]
+    batch_rotc = batch_rot[..., 0:1]
+    batch_reg = pred_dict['center'].clone().permute(0, 2, 3, 1).contiguous()
+    batch_hei = pred_dict['center_z'].clone().permute(0, 2, 3, 1).contiguous()
+    batch_rot = torch.atan2(batch_rots, batch_rotc)
+
+    batch, H, W, _ = batch_dim.size()
+    batch_reg = batch_reg.reshape(batch, H * W, 2)
+    batch_hei = batch_hei.reshape(batch, H * W, 1)
+
+    batch_rot = batch_rot.reshape(batch, H * W, 1)
+    batch_dim = batch_dim.reshape(batch, H * W, 3)
+
+    ys, xs = torch.meshgrid([torch.arange(0, H), torch.arange(0, W)])
+    ys = ys.view(1, H, W).repeat(batch, 1, 1).to(batch_dim)
+    xs = xs.view(1, H, W).repeat(batch, 1, 1).to(batch_dim)
+
+    xs = xs.view(batch, -1, 1) + batch_reg[:, :, 0:1]
+    ys = ys.view(batch, -1, 1) + batch_reg[:, :, 1:2]
+
+    xs = xs * feature_map_stride * voxel_size[0] + point_cloud_range[0]
+    ys = ys * feature_map_stride * voxel_size[1] + point_cloud_range[1]
+    pred_boxes = torch.cat([xs, ys, batch_hei, batch_dim, batch_rot], dim=2)
+    pred_boxes = pred_boxes.permute(0, 2, 1).contiguous().reshape(batch, -1, H, W)
+    return pred_boxes
+
+def center_to_corner2d(center, dim):
+    corners_norm = torch.tensor([[-0.5, -0.5], [-0.5, 0.5], [0.5, 0.5], [0.5, -0.5]],
+                                dtype=torch.float32, device=dim.device)
+    corners = dim.view([-1, 1, 2]) * corners_norm.view([1, 4, 2])
+    corners = corners + center.view(-1, 1, 2)
+    return corners
+
+
+def bbox3d_overlaps_iou(pred_boxes, gt_boxes):
+    assert pred_boxes.shape[0] == gt_boxes.shape[0]
+
+    qcorners = center_to_corner2d(pred_boxes[:, :2], pred_boxes[:, 3:5])
+    gcorners = center_to_corner2d(gt_boxes[:, :2], gt_boxes[:, 3:5])
+
+    inter_max_xy = torch.maximum(qcorners[:, 2], gcorners[:, 2])
+    inter_min_xy = torch.maximum(qcorners[:, 0], gcorners[:, 0])
+
+    # calculate area
+    volume_pred_boxes = pred_boxes[:, 3] * pred_boxes[:, 4] * pred_boxes[:, 5]
+    volume_gt_boxes = gt_boxes[:, 3] * gt_boxes[:, 4] * gt_boxes[:, 5]
+
+    inter_h = torch.minimum(gt_boxes[:, 2] + 0.5 * gt_boxes[:, 5], pred_boxes[:, 2] + 0.5 * pred_boxes[:, 5]) - \
+              torch.maximum(gt_boxes[:, 2] - 0.5 * gt_boxes[:, 5], pred_boxes[:, 2] - 0.5 * pred_boxes[:, 5])
+    inter_h = torch.clamp(inter_h, min=0)
+
+    inter = torch.clamp((inter_max_xy - inter_min_xy), min=0)
+    volume_inter = inter[:, 0] * inter[:, 1] * inter_h
+    volume_union = volume_gt_boxes + volume_pred_boxes - volume_inter
+
+    ious = volume_inter / volume_union
+    ious = torch.clamp(ious, min=0, max=1.0)
+    return ious
+
+
+def bbox3d_overlaps_giou(pred_boxes, gt_boxes):
+    assert pred_boxes.shape[0] == gt_boxes.shape[0]
+
+    qcorners = center_to_corner2d(pred_boxes[:, :2], pred_boxes[:, 3:5])
+    gcorners = center_to_corner2d(gt_boxes[:, :2], gt_boxes[:, 3:5])
+
+    inter_max_xy = torch.minimum(qcorners[:, 2], gcorners[:, 2])
+    inter_min_xy = torch.maximum(qcorners[:, 0], gcorners[:, 0])
+    out_max_xy = torch.maximum(qcorners[:, 2], gcorners[:, 2])
+    out_min_xy = torch.minimum(qcorners[:, 0], gcorners[:, 0])
+
+    # calculate area
+    volume_pred_boxes = pred_boxes[:, 3] * pred_boxes[:, 4] * pred_boxes[:, 5]
+    volume_gt_boxes = gt_boxes[:, 3] * gt_boxes[:, 4] * gt_boxes[:, 5]
+
+    inter_h = torch.minimum(gt_boxes[:, 2] + 0.5 * gt_boxes[:, 5], pred_boxes[:, 2] + 0.5 * pred_boxes[:, 5]) - \
+              torch.maximum(gt_boxes[:, 2] - 0.5 * gt_boxes[:, 5], pred_boxes[:, 2] - 0.5 * pred_boxes[:, 5])
+    inter_h = torch.clamp(inter_h, min=0)
+
+    inter = torch.clamp((inter_max_xy - inter_min_xy), min=0)
+    volume_inter = inter[:, 0] * inter[:, 1] * inter_h
+    volume_union = volume_gt_boxes + volume_pred_boxes - volume_inter
+
+    outer_h = torch.maximum(gt_boxes[:, 2] + 0.5 * gt_boxes[:, 5], pred_boxes[:, 2] + 0.5 * pred_boxes[:, 5]) - \
+              torch.minimum(gt_boxes[:, 2] - 0.5 * gt_boxes[:, 5], pred_boxes[:, 2] - 0.5 * pred_boxes[:, 5])
+    outer_h = torch.clamp(outer_h, min=0)
+    outer = torch.clamp((out_max_xy - out_min_xy), min=0)
+    closure = outer[:, 0] * outer[:, 1] * outer_h
+
+    gious = volume_inter / volume_union - (closure - volume_union) / closure
+    gious = torch.clamp(gious, min=-1.0, max=1.0)
+    return gious
+
+
+def bbox3d_overlaps_diou(pred_boxes, gt_boxes):
+    assert pred_boxes.shape[0] == gt_boxes.shape[0]
+
+    qcorners = center_to_corner2d(pred_boxes[:, :2], pred_boxes[:, 3:5])
+    gcorners = center_to_corner2d(gt_boxes[:, :2], gt_boxes[:, 3:5])
+
+    inter_max_xy = torch.minimum(qcorners[:, 2], gcorners[:, 2])
+    inter_min_xy = torch.maximum(qcorners[:, 0], gcorners[:, 0])
+    out_max_xy = torch.maximum(qcorners[:, 2], gcorners[:, 2])
+    out_min_xy = torch.minimum(qcorners[:, 0], gcorners[:, 0])
+
+    # calculate area
+    volume_pred_boxes = pred_boxes[:, 3] * pred_boxes[:, 4] * pred_boxes[:, 5]
+    volume_gt_boxes = gt_boxes[:, 3] * gt_boxes[:, 4] * gt_boxes[:, 5]
+
+    inter_h = torch.minimum(pred_boxes[:, 2] + 0.5 * pred_boxes[:, 5], gt_boxes[:, 2] + 0.5 * gt_boxes[:, 5]) - \
+              torch.maximum(pred_boxes[:, 2] - 0.5 * pred_boxes[:, 5], gt_boxes[:, 2] - 0.5 * gt_boxes[:, 5])
+    inter_h = torch.clamp(inter_h, min=0)
+
+    inter = torch.clamp((inter_max_xy - inter_min_xy), min=0)
+    volume_inter = inter[:, 0] * inter[:, 1] * inter_h
+    volume_union = volume_gt_boxes + volume_pred_boxes - volume_inter
+
+    # boxes_iou3d_gpu(pred_boxes, gt_boxes)
+    inter_diag = torch.pow(gt_boxes[:, 0:3] - pred_boxes[:, 0:3], 2).sum(-1)
+
+    outer_h = torch.maximum(gt_boxes[:, 2] + 0.5 * gt_boxes[:, 5], pred_boxes[:, 2] + 0.5 * pred_boxes[:, 5]) - \
+              torch.minimum(gt_boxes[:, 2] - 0.5 * gt_boxes[:, 5], pred_boxes[:, 2] - 0.5 * pred_boxes[:, 5])
+    outer_h = torch.clamp(outer_h, min=0)
+    outer = torch.clamp((out_max_xy - out_min_xy), min=0)
+    outer_diag = outer[:, 0] ** 2 + outer[:, 1] ** 2 + outer_h ** 2
+
+    dious = volume_inter / volume_union - inter_diag / outer_diag
+    dious = torch.clamp(dious, min=-1.0, max=1.0)
+
+    return dious

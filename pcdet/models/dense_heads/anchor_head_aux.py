@@ -17,8 +17,9 @@ class AnchorHeadAux(AnchorHeadTemplate):
         self.aux_module = CGAM(model_cfg.CGAM, input_channels, class_names, 
                                 grid_size, voxel_size, point_cloud_range)
         # adjust input channels for aux feature
-        input_channels = input_channels + self.aux_module.corner_types * num_class  \
-                                        + self.aux_module.corner_types * model_cfg.CGAM.HEAD_DICT.corner.out_channels
+        aux_channels = self.aux_module.corner_types * num_class  \
+                     + self.aux_module.corner_types * model_cfg.CGAM.HEAD_DICT.corner.out_channels
+        input_channels = input_channels + aux_channels
 
         self.num_anchors_per_location = sum(self.num_anchors_per_location)
 

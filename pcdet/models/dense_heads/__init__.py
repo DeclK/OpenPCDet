@@ -9,7 +9,12 @@ from .anchor_head_semi import AnchorHeadSemi
 from .center_head_semi import CenterHeadSemi
 from .center_head_aux import CenterHeadAux
 from .anchor_head_aux import AnchorHeadAux
+<<<<<<< HEAD
 from .anchor_head_semi_aux import AnchorHeadSemiAux
+=======
+from .center_head_semi_aux import CenterHeadSemiAux
+from .center_head_iou import CenterHeadIoU
+>>>>>>> ea00e9842bf5015124eebd9786743e702023aaa5
 
 __all__ = {
     'AnchorHeadTemplate': AnchorHeadTemplate,
@@ -23,5 +28,10 @@ __all__ = {
     'CenterHeadSemi': CenterHeadSemi,
     'CenterHeadAux': CenterHeadAux,
     'AnchorHeadAux': AnchorHeadAux,
+<<<<<<< HEAD
     'AnchorHeadSemiAux': AnchorHeadSemiAux,
+=======
+    'CenterHeadSemiAux': CenterHeadSemiAux,
+    'CenterHeadIoU': CenterHeadIoU
+>>>>>>> ea00e9842bf5015124eebd9786743e702023aaa5
 }

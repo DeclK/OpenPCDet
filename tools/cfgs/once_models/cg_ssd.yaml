@@ -11,7 +11,11 @@ MODEL:
         NAME: MeanVFE
 
     BACKBONE_3D:
+<<<<<<< HEAD
         NAME: VoxelResBackBone8x
+=======
+        NAME: VoxelBackBone8x
+>>>>>>> ea00e9842bf5015124eebd9786743e702023aaa5
 
     MAP_TO_BEV:
         NAME: HeightCompression
@@ -25,7 +29,10 @@ MODEL:
         NUM_FILTERS: [128, 256]
         UPSAMPLE_STRIDES: [1, 2]
         NUM_UPSAMPLE_FILTERS: [256, 256]
+<<<<<<< HEAD
 
+=======
+>>>>>>> ea00e9842bf5015124eebd9786743e702023aaa5
 
     DENSE_HEAD:
         NAME: AnchorHeadAux
@@ -103,7 +110,12 @@ MODEL:
 
             HEAD_DICT: {
                 'hm':{'num_conv': 2},
+<<<<<<< HEAD
                 'corner': {'out_channels': 2, 'num_conv': 2},
+=======
+                # 'corner': {'out_channels': 2, 'num_conv': 2},
+                'center': {'out_channels': 2, 'num_conv': 2}
+>>>>>>> ea00e9842bf5015124eebd9786743e702023aaa5
             }
             HM_NORMALIZATION: True
             TARGET_ASSIGNER_CONFIG:
