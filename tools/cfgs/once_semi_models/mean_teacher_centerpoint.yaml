@@ -37,7 +37,7 @@ DATA_CONFIG:
 
         - NAME: random_world_scaling
           WORLD_SCALE_RANGE: [0.95, 1.05]
-
+        
 OPTIMIZATION:
     PRETRAIN:
         BATCH_SIZE_PER_GPU: 4
@@ -65,7 +65,7 @@ OPTIMIZATION:
         FILTER_BOXES: False
 
         CONSISTENCY_WEIGHT: 1 # 10
-        CENTER_WEIGHT: 1
+        CENTER_WEIGHT: 0
         SIZE_WEIGHT: 0
         CLASS_WEIGHT: 2
 

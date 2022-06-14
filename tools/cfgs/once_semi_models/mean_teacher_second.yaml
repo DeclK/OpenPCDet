@@ -15,8 +15,14 @@ DATA_CONFIG:
     }
 
     TEACHER_AUGMENTOR:
-      DISABLE_AUG_LIST: ['random_world_scaling']    # No Augment For Teacher
+      DISABLE_AUG_LIST: ['placeholder']
       AUG_CONFIG_LIST:
+        - NAME: random_world_flip
+          ALONG_AXIS_LIST: ['x', 'y']
+
+        - NAME: random_world_rotation
+          WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
+
         - NAME: random_world_scaling
           WORLD_SCALE_RANGE: [0.95, 1.05]
 
@@ -31,7 +37,7 @@ DATA_CONFIG:
 
         - NAME: random_world_scaling
           WORLD_SCALE_RANGE: [0.95, 1.05]
-
+        
 OPTIMIZATION:
     PRETRAIN:
         BATCH_SIZE_PER_GPU: 4
@@ -54,11 +60,11 @@ OPTIMIZATION:
         NAME: SESS
         LD_BATCH_SIZE_PER_GPU: 4    # 1
         UD_BATCH_SIZE_PER_GPU: 4
-        NUM_EPOCHS: 25
+        NUM_EPOCHS: 60
 
         FILTER_BY_NMS: True
         NMS:
-            SCORE_THRESH: 0.0
+            SCORE_THRESH: 0.1
             NMS_CONFIG:
                 MULTI_CLASSES_NMS: False
                 NMS_TYPE: nms_gpu
@@ -66,7 +72,7 @@ OPTIMIZATION:
                 NMS_PRE_MAXSIZE: 500
                 NMS_POST_MAXSIZE: 80
 
-        FILTER_BY_SCORE_INTERVAL: True
+        FILTER_BY_SCORE_INTERVAL: False
         SCORE_INTERVAL: [0.1, 0.5]
         FILTER_BY_TOPK: False
         #TOPK: 128
@@ -84,7 +90,7 @@ OPTIMIZATION:
 
         STUDENT:
             OPTIMIZER: adam_onecycle
-            LR: 0.001
+            LR: 0.003
             WEIGHT_DECAY: 0.01
             MOMENTUM: 0.9
             MOMS: [0.95, 0.85]
