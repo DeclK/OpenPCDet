@@ -1,7 +1,7 @@
 import os
 
-CONFIG_FILE = './cfgs/once_models/cg_ssd.yaml'
-gpu_index = [4,5,6,7]
+CONFIG_FILE = './cfgs/once_models/centerpoint_iou.yaml'
+gpu_index = [0,1,2,3]
 sample_per_gpu = 4
 CKPT_CHEK_INTERVAL = 2
 

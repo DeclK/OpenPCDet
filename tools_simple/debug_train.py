@@ -1,6 +1,6 @@
 import os
 
-CONFIG_FILE = './cfgs/once_models/cg_ssd.yaml'
+CONFIG_FILE = './cfgs/once_models/centerpoint_iou.yaml'
 gpu_index = [1]
 sample_per_gpu = 4
 

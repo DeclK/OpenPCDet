@@ -10,6 +10,7 @@ from .center_head_semi import CenterHeadSemi
 from .center_head_aux import CenterHeadAux
 from .anchor_head_aux import AnchorHeadAux
 from .center_head_semi_aux import CenterHeadSemiAux
+from .center_head_iou import CenterHeadIoU
 
 __all__ = {
     'AnchorHeadTemplate': AnchorHeadTemplate,
@@ -24,4 +25,5 @@ __all__ = {
     'CenterHeadAux': CenterHeadAux,
     'AnchorHeadAux': AnchorHeadAux,
     'CenterHeadSemiAux': CenterHeadSemiAux,
+    'CenterHeadIoU': CenterHeadIoU
 }
