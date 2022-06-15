@@ -3,6 +3,7 @@ from .spconv_backbone import VoxelBackBone8x, VoxelResBackBone8x
 from .spconv_unet import UNetV2
 from .aux_backbone import AuxVoxelBackBone8x
 from .SpMiddleFHD import SpMiddleFHD
+from .pillar_encoder import SpMiddlePillarEncoder
 
 __all__ = {
     'VoxelBackBone8x': VoxelBackBone8x,
@@ -12,4 +13,5 @@ __all__ = {
     'VoxelResBackBone8x': VoxelResBackBone8x,
     'AuxVoxelBackBone8x': AuxVoxelBackBone8x,
     'SpMiddleFHD': SpMiddleFHD,
+    'SpMiddlePillarEncoder': SpMiddlePillarEncoder,
 }
