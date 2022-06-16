@@ -29,13 +29,7 @@ MODEL:
         NUM_BEV_FEATURES: 128
 
     BACKBONE_2D:
-        NAME: BaseBEVBackbone
-
-        LAYER_NUMS: [5, 5]
-        LAYER_STRIDES: [1, 2]
-        NUM_FILTERS: [256, 256]
-        UPSAMPLE_STRIDES: [1, 2]
-        NUM_UPSAMPLE_FILTERS: [128, 128]
+        NAME: SSFA
 
     DENSE_HEAD:
         NAME: AnchorHeadSingle

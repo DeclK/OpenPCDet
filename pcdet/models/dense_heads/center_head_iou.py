@@ -283,56 +283,69 @@ class CenterHeadIoU(nn.Module):
 
     def generate_predicted_boxes(self, batch_size, pred_dicts):
         post_process_cfg = self.model_cfg.POST_PROCESSING
-        post_center_limit_range = torch.tensor(post_process_cfg.POST_CENTER_LIMIT_RANGE).cuda().float()
+        post_center_range = torch.tensor(post_process_cfg.POST_CENTER_LIMIT_RANGE).cuda().float()
 
         ret_dict = [{
             'pred_boxes': [],
             'pred_scores': [],
             'pred_labels': [],
-        } for k in range(batch_size)]
+        } for i in range(batch_size)]
         for idx, pred_dict in enumerate(pred_dicts):    # for each head
-            batch_hm = pred_dict['hm'].sigmoid()
-            batch_center = pred_dict['center']
-            batch_center_z = pred_dict['center_z']
-            batch_dim = pred_dict['dim'].exp()
-            batch_rot_cos = pred_dict['rot'][:, 0].unsqueeze(dim=1)
-            batch_rot_sin = pred_dict['rot'][:, 1].unsqueeze(dim=1)
-            batch_vel = pred_dict['vel'] if 'vel' in self.separate_head_cfg.HEAD_ORDER else None
-            batch_iou = pred_dict.get('iou', None)
-
-            final_pred_dicts = centernet_utils.decode_bbox_from_heatmap(
-                heatmap=batch_hm, rot_cos=batch_rot_cos, rot_sin=batch_rot_sin,
-                center=batch_center, center_z=batch_center_z, dim=batch_dim, vel=batch_vel,
-                iou = batch_iou,
-                point_cloud_range=self.point_cloud_range, voxel_size=self.voxel_size,
+            batch_box_preds = centernet_utils.generate_dense_boxes(
+                pred_dict=pred_dict,
                 feature_map_stride=self.feature_map_stride,
-                K=post_process_cfg.MAX_OBJ_PER_SAMPLE,
-                circle_nms=(post_process_cfg.NMS_CONFIG.NMS_TYPE == 'circle_nms'),
-                score_thresh=post_process_cfg.SCORE_THRESH,
-                post_center_limit_range=post_center_limit_range
+                voxel_size=self.voxel_size,
+                point_cloud_range=self.point_cloud_range
             )
+            B, _, H, W = batch_box_preds.size()
+            batch_box_preds = batch_box_preds.permute(0, 2, 3, 1).view(B, H*W, -1)
+            batch_hm = pred_dict['hm'].sigmoid().permute(0, 2, 3, 1).view(B, H*W, -1)
 
-            for k, final_dict in enumerate(final_pred_dicts):   # for each batch
-                final_dict['pred_labels'] = self.class_id_mapping_each_head[idx][final_dict['pred_labels'].long()]
-                if post_process_cfg.NMS_CONFIG.NMS_TYPE != 'circle_nms':
+            if pred_dict.get('iou', False):
+                batch_iou = pred_dict['iou'].permute(0, 2, 3, 1).view(B, H*W, -1)
+                batch_iou = (batch_iou + 1) * 0.5
+            else: batch_iou = torch.ones((B, H*W, 1)).to(batch_hm.device)
+
+            for i in range(B):   # for each batch
+                box_preds = batch_box_preds[i]
+                hm_preds = batch_hm[i]
+                iou_preds = batch_iou[i].view(-1)
+                scores, labels = torch.max(hm_preds, dim=-1)
+                
+                score_mask = scores > post_process_cfg.SCORE_THRESH
+                distance_mask = (box_preds[..., :3] >= post_center_range[:3]).all(1) \
+                    & (box_preds[..., :3] <= post_center_range[3:]).all(1)
+
+                mask = distance_mask & score_mask
+                box_preds = box_preds[mask]
+                scores = scores[mask]
+                labels = labels[mask]
+                iou_preds = torch.clamp(iou_preds[mask], min=0, max=1.)
+
+                if post_process_cfg.NMS_CONFIG.NMS_NAME == 'agnostic_nms':
+                    rectifier = post_process_cfg.get('RECTIFIER', 0)
+                    rectifier = torch.tensor(rectifier).float().to(scores.device)
+                    scores = torch.pow(scores, 1 - rectifier) * torch.pow(iou_preds, rectifier)
                     selected, selected_scores = model_nms_utils.class_agnostic_nms(
-                        box_scores=final_dict['pred_scores'], box_preds=final_dict['pred_boxes'],
+                        box_scores=scores, box_preds=box_preds,
                         nms_config=post_process_cfg.NMS_CONFIG,
-                        score_thresh=None
                     )
+                    selected_boxes = box_preds[selected]
+                    selected_labels = labels[selected]
 
-                    final_dict['pred_boxes'] = final_dict['pred_boxes'][selected]
-                    final_dict['pred_scores'] = selected_scores
-                    final_dict['pred_labels'] = final_dict['pred_labels'][selected]
+                else:
+                    raise NotImplementedError
+                    
+                selected_labels = self.class_id_mapping_each_head[idx][selected_labels.long()]
 
-                ret_dict[k]['pred_boxes'].append(final_dict['pred_boxes'])
-                ret_dict[k]['pred_scores'].append(final_dict['pred_scores'])
-                ret_dict[k]['pred_labels'].append(final_dict['pred_labels'])
+                ret_dict[i]['pred_boxes'].append(selected_boxes)
+                ret_dict[i]['pred_scores'].append(selected_scores)
+                ret_dict[i]['pred_labels'].append(selected_labels)
 
-        for k in range(batch_size): # concat head results
-            ret_dict[k]['pred_boxes'] = torch.cat(ret_dict[k]['pred_boxes'], dim=0)
-            ret_dict[k]['pred_scores'] = torch.cat(ret_dict[k]['pred_scores'], dim=0)
-            ret_dict[k]['pred_labels'] = torch.cat(ret_dict[k]['pred_labels'], dim=0) + 1
+        for i in range(batch_size): # concat head results
+            ret_dict[i]['pred_boxes'] = torch.cat(ret_dict[i]['pred_boxes'], dim=0)
+            ret_dict[i]['pred_scores'] = torch.cat(ret_dict[i]['pred_scores'], dim=0)
+            ret_dict[i]['pred_labels'] = torch.cat(ret_dict[i]['pred_labels'], dim=0) + 1
 
         return ret_dict
 

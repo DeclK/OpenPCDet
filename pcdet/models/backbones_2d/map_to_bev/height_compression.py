@@ -19,7 +19,7 @@ class HeightCompression(nn.Module):
         """
         encoded_spconv_tensor = batch_dict['encoded_spconv_tensor']
         spatial_features = encoded_spconv_tensor.dense()
-        if len(spatial_features) == 5:  # CHK MARK, no need for 2D shape
+        if len(spatial_features.size()) == 5:  # CHK MARK, no need for 2D shape
             N, C, D, H, W = spatial_features.shape  # (N, C, Z, Y, X)
             spatial_features = spatial_features.view(N, C * D, H, W)
         batch_dict['spatial_features'] = spatial_features
