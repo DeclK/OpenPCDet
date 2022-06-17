@@ -10,7 +10,7 @@ except:
     from spconv import SparseConv2d, SparseMaxPool2d, SparseInverseConv2d
 
 from torch import nn
-from .pillar_encoder_utils import bev_spatial_shape, Sparse2DBasicBlock, Sparse2DBasicBlockV
+from .pillar_encoder_utils import Sparse2DBasicBlock, Sparse2DBasicBlockV, Dense2DBasicBlock
 
 
 class SpMiddlePillarEncoder(nn.Module):
@@ -57,7 +57,16 @@ class SpMiddlePillarEncoder(nn.Module):
             Sparse2DBasicBlock(128, 128, norm_fn=norm_fn, indice_key="res3"),
         )
 
-        self.num_point_features = 128
+        norm_fn = partial(nn.BatchNorm2d, eps=1e-3, momentum=0.01)
+        self.conv5 = nn.Sequential(
+            nn.Conv2d(128, 256, 3, 2, padding=1, bias=False),
+            norm_fn(256),
+            nn.ReLU(),
+            Dense2DBasicBlock(256, 256, norm_fn=norm_fn),
+            Dense2DBasicBlock(256, 256, norm_fn=norm_fn),
+        )
+
+        self.num_point_features = 256
 
     def forward(self, batch_dict):
         # transfer pillar features into sparse tensor
@@ -70,7 +79,8 @@ class SpMiddlePillarEncoder(nn.Module):
         x_conv2 = self.conv2(x_conv1)
         x_conv3 = self.conv3(x_conv2)
         x_conv4 = self.conv4(x_conv3)
+        x_conv5 = self.conv5(x_conv4.dense())
 
-        batch_dict['encoded_spconv_tensor'] = x_conv4
-        batch_dict['encoded_spconv_tensor_stride'] = 8
+        batch_dict['encoded_tensor'] = x_conv5
+        batch_dict['encoded_tensor_stride'] = 16
         return batch_dict

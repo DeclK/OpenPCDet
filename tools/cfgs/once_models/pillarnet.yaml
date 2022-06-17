@@ -26,10 +26,16 @@ MODEL:
 
     MAP_TO_BEV:
         NAME: HeightCompression
-        NUM_BEV_FEATURES: 128
+        NUM_BEV_FEATURES: 256
 
     BACKBONE_2D:
-        NAME: SSFA
+        NAME: BaseBEVBackbone
+
+        LAYER_NUMS: [5, 5]
+        LAYER_STRIDES: [1, 2]
+        NUM_FILTERS: [128, 256]
+        UPSAMPLE_STRIDES: [1, 2]
+        NUM_UPSAMPLE_FILTERS: [256, 256]
 
     DENSE_HEAD:
         NAME: AnchorHeadSingle
@@ -47,7 +53,7 @@ MODEL:
                 'anchor_rotations': [0, 1.57],
                 'anchor_bottom_heights': [-1.71],
                 'align_center': False,
-                'feature_map_stride': 8,
+                'feature_map_stride': 16,
                 'matched_threshold': 0.6,
                 'unmatched_threshold': 0.45
             },
@@ -57,7 +63,7 @@ MODEL:
               'anchor_rotations': [0, 1.57],
               'anchor_bottom_heights': [-1.74],
               'align_center': False,
-              'feature_map_stride': 8,
+              'feature_map_stride': 16,
               'matched_threshold': 0.55,
               'unmatched_threshold': 0.4
             },
@@ -67,7 +73,7 @@ MODEL:
               'anchor_rotations': [0, 1.57],
               'anchor_bottom_heights': [-1.55],
               'align_center': False,
-              'feature_map_stride': 8,
+              'feature_map_stride': 16,
               'matched_threshold': 0.55,
               'unmatched_threshold': 0.4
             },
@@ -77,7 +83,7 @@ MODEL:
                 'anchor_rotations': [0, 1.57],
                 'anchor_bottom_heights': [-1.62],
                 'align_center': False,
-                'feature_map_stride': 8,
+                'feature_map_stride': 16,
                 'matched_threshold': 0.3,
                 'unmatched_threshold': 0.15
             },
@@ -87,7 +93,7 @@ MODEL:
                 'anchor_rotations': [0, 1.57],
                 'anchor_bottom_heights': [-1.65],
                 'align_center': False,
-                'feature_map_stride': 8,
+                'feature_map_stride': 16,
                 'matched_threshold': 0.5,
                 'unmatched_threshold': 0.35
             }

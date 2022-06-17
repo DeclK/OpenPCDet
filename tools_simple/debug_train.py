@@ -1,7 +1,7 @@
 import os
 
-CONFIG_FILE = './cfgs/once_models/centerpoint_iou.yaml'
-gpu_index = [1]
+CONFIG_FILE = './cfgs/once_models/pillarnet.yaml'
+gpu_index = [2]
 sample_per_gpu = 4
 
 NUM_GPUS = len(gpu_index)

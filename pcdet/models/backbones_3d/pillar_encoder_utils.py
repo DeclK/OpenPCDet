@@ -145,3 +145,83 @@ def bev_spatial_shape(point_cloud_range, bev_size):
     W = round((point_cloud_range[3] - point_cloud_range[0]) / bev_size)
     H = round((point_cloud_range[4] - point_cloud_range[1]) / bev_size)
     return int(H), int(W)
+
+class Dense2DBasicBlock(nn.Module):
+    expansion = 1
+
+    def __init__(
+        self,
+        inplanes,
+        planes,
+        stride=1,
+        norm_fn=None,
+    ):
+        super(Dense2DBasicBlock, self).__init__()
+        self.batch_norm1 = norm_fn(planes)
+        self.batch_norm2 = norm_fn(planes)
+
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(inplanes, planes, 3, stride=stride, padding=1, bias=False),
+            self.batch_norm1,
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(planes, planes, 3, stride=stride, padding=1, bias=False),
+            self.batch_norm2,
+        )
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        identity = x
+
+        out = self.conv1(x)
+        out = self.relu(out)
+        out = self.conv2(out)
+
+        out += identity
+        out = self.relu(out)
+
+        return out
+
+class Dense2DBasicBlockV(nn.Module):
+    expansion = 1
+
+    def __init__(
+        self,
+        inplanes,
+        planes,
+        stride=1,
+        norm_fn=None,
+    ):
+        super(Dense2DBasicBlockV, self).__init__()
+        self.batch_norm1 = norm_fn(planes)
+        self.batch_norm2 = norm_fn(planes)
+        self.batch_norm3 = norm_fn(planes)
+
+        self.conv0 = nn.Sequential(
+            nn.Conv2d(inplanes, planes, 3, stride=stride, padding=1, bias=False),
+            self.batch_norm1,
+            nn.ReLU()
+        )
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(planes, planes, 3, stride=1, padding=1, bias=False),
+            self.batch_norm2,
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(planes, planes, 3, stride=1, padding=1, bias=False),
+            self.batch_norm3,
+        )
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = self.conv0(x)
+
+        identity = x
+
+        out = self.conv1(x)
+        out = self.relu(out)
+        out = self.conv2(out)
+
+        out += identity
+        out = self.relu(out)
+
+        return out
