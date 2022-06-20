@@ -79,8 +79,10 @@ class SpMiddlePillarEncoder(nn.Module):
         x_conv2 = self.conv2(x_conv1)
         x_conv3 = self.conv3(x_conv2)
         x_conv4 = self.conv4(x_conv3)
-        x_conv5 = self.conv5(x_conv4.dense())
+        x_conv4 = x_conv4.dense()
+        x_conv5 = self.conv5(x_conv4)
 
-        batch_dict['encoded_tensor'] = x_conv5
-        batch_dict['encoded_tensor_stride'] = 16
+        batch_dict['encoded_tensor_8x'] = x_conv4
+        batch_dict['encoded_tensor_16x'] = x_conv5
+        batch_dict['encoded_tensor_stride'] = 8
         return batch_dict
