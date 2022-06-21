@@ -1,7 +1,7 @@
 import os
 
 CONFIG_FILE = './cfgs/once_models/pillarnet.yaml'
-gpu_index = [1,2,3]
+gpu_index = [2,3,4,5]
 sample_per_gpu = 4
 CKPT_CHEK_INTERVAL = 2
 

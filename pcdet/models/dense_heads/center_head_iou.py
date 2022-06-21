@@ -301,7 +301,7 @@ class CenterHeadIoU(nn.Module):
             batch_box_preds = batch_box_preds.permute(0, 2, 3, 1).view(B, H*W, -1)
             batch_hm = pred_dict['hm'].sigmoid().permute(0, 2, 3, 1).view(B, H*W, -1)
 
-            if pred_dict.get('iou', False):
+            if 'iou' in pred_dict.keys():
                 batch_iou = pred_dict['iou'].permute(0, 2, 3, 1).view(B, H*W, -1)
                 batch_iou = (batch_iou + 1) * 0.5
             else: batch_iou = torch.ones((B, H*W, 1)).to(batch_hm.device)
@@ -324,7 +324,10 @@ class CenterHeadIoU(nn.Module):
 
                 if post_process_cfg.NMS_CONFIG.NMS_NAME == 'agnostic_nms':
                     rectifier = post_process_cfg.get('RECTIFIER', 0)
-                    rectifier = torch.tensor(rectifier).float().to(scores.device)
+                    rectifier = torch.tensor(rectifier).float().view(-1).to(scores.device)
+                    if rectifier.size(0) > 1:   # class specific rectifier
+                        assert rectifier.size(0) == self.num_class
+                        rectifier = rectifier[labels]
                     scores = torch.pow(scores, 1 - rectifier) * torch.pow(iou_preds, rectifier)
                     selected, selected_scores = model_nms_utils.class_agnostic_nms(
                         box_scores=scores, box_preds=box_preds,

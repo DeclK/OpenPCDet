@@ -1,6 +1,6 @@
 import os
 
-CONFIG_FILE = './cfgs/once_models/pillarnet.yaml'
+CONFIG_FILE = './cfgs/once_models/centerpoint.yaml'
 gpu_index = [1]
 sample_per_gpu = 4
 
