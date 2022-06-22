@@ -1,7 +1,7 @@
 import os
 
-CONFIG_FILE = './cfgs/once_models/centerpoint_iou.yaml'
-CKPT = '/home/chk/OpenPCDet/data/output/centerpoint_iou_v1.2_only_iou_rectify/cfgs/once_models/centerpoint_iou/default/ckpt/checkpoint_epoch_80.pth'
+CONFIG_FILE = './cfgs/once_models/centerpoint_aux.yaml'
+CKPT = '/home/chk/OpenPCDet/checkpoints/centerpoint_aux_epoch_74.pth'
 gpu_index = [1]
 sample_per_gpu = 4
 

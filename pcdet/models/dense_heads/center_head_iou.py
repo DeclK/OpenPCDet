@@ -310,24 +310,25 @@ class CenterHeadIoU(nn.Module):
                 box_preds = batch_box_preds[i]
                 hm_preds = batch_hm[i]
                 iou_preds = batch_iou[i].view(-1)
+
                 scores, labels = torch.max(hm_preds, dim=-1)
-                
                 score_mask = scores > post_process_cfg.SCORE_THRESH
                 distance_mask = (box_preds[..., :3] >= post_center_range[:3]).all(1) \
                     & (box_preds[..., :3] <= post_center_range[3:]).all(1)
-
                 mask = distance_mask & score_mask
+
                 box_preds = box_preds[mask]
                 scores = scores[mask]
                 labels = labels[mask]
                 iou_preds = torch.clamp(iou_preds[mask], min=0, max=1.)
 
+                rectifier = post_process_cfg.get('RECTIFIER', 0)
+                rectifier = torch.tensor(rectifier).float().view(-1).to(scores.device)  # (num_class,)
+                if rectifier.size(0) > 1:   # class specific rectifier
+                    assert rectifier.size(0) == self.num_class
+                    rectifier = rectifier[labels]   # (N,)
+
                 if post_process_cfg.NMS_CONFIG.NMS_NAME == 'agnostic_nms':
-                    rectifier = post_process_cfg.get('RECTIFIER', 0)
-                    rectifier = torch.tensor(rectifier).float().view(-1).to(scores.device)
-                    if rectifier.size(0) > 1:   # class specific rectifier
-                        assert rectifier.size(0) == self.num_class
-                        rectifier = rectifier[labels]
                     scores = torch.pow(scores, 1 - rectifier) * torch.pow(iou_preds, rectifier)
                     selected, selected_scores = model_nms_utils.class_agnostic_nms(
                         box_scores=scores, box_preds=box_preds,
@@ -336,6 +337,15 @@ class CenterHeadIoU(nn.Module):
                     selected_boxes = box_preds[selected]
                     selected_labels = labels[selected]
 
+                elif post_process_cfg.NMS_CONFIG.NMS_NAME == 'class_specific_nms':
+                    scores = hm_preds[mask] # (N, num_class)
+                    rectifier = rectifier.view(-1, 1)   # for broadcast
+                    iou_preds = iou_preds.view(-1, 1)
+                    scores = torch.pow(scores, 1 - rectifier) * torch.pow(iou_preds, rectifier)
+                    selected_scores, selected_labels, selected_boxes = model_nms_utils.class_specific_nms(
+                        cls_scores=scores, box_preds=box_preds, labels=labels,
+                        nms_config=post_process_cfg.NMS_CONFIG,
+                    )
                 else:
                     raise NotImplementedError
                     

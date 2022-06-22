@@ -1,6 +1,7 @@
 **__pycache__**
 **build**
 **egg-info**
+**checkpoint**
 data/
 *.pyc
 venv/
@@ -15,5 +16,4 @@ version.py
 data
 .vscode/
 tempt*
-checkpoints
 .github/
