@@ -5,7 +5,6 @@ Written by Jiageng Mao
 
 import numpy as np
 import numba
-import copy
 
 from .iou_utils import rotate_iou_gpu_eval
 from .eval_utils import compute_split_parts, overall_filter, distance_filter, overall_distance_filter
@@ -29,7 +28,6 @@ superclass_iou_threshold_dict = {
     'Cyclist': 0.5
 }
 
-
 def get_evaluation_results(gt_annos,
                            pred_annos,
                            classes,
@@ -40,6 +38,7 @@ def get_evaluation_results(gt_annos,
                            ap_with_heading=False,
                            num_parts=100,
                            print_ok=False):
+    print('names:', classes)
 
     if iou_thresholds is None:
         if use_superclass:
@@ -60,10 +59,13 @@ def get_evaluation_results(gt_annos,
 
     num_samples = len(gt_annos)
     split_parts = compute_split_parts(num_samples, num_parts)
+  #  print("gt_annos:", gt_annos)
+  #  print("pred_annos:", pred_annos)
     ious = compute_iou3d(gt_annos,
                          pred_annos,
                          split_parts,
                          with_heading=ap_with_heading)
+ #   print("ious:", ious)
     num_classes = len(classes)
     if difficulty_mode == 'Distance':
         num_difficulties = 3
@@ -90,7 +92,7 @@ def get_evaluation_results(gt_annos,
             for sample_idx in range(num_samples):
                 gt_anno = gt_annos[sample_idx]
                 pred_anno = pred_annos[sample_idx]
-                pred_score = pred_anno['scores']
+                pred_score = pred_anno['score']
                 iou = ious[sample_idx]
                 gt_flag, pred_flag = filter_data(gt_anno,
                                                  pred_anno,
@@ -116,7 +118,7 @@ def get_evaluation_results(gt_annos,
             confusion_matrix = np.zeros([len(thresholds),
                                          3])  # only record tp/fp/fn
             for sample_idx in range(num_samples):
-                pred_score = pred_annos[sample_idx]['scores']
+                pred_score = pred_annos[sample_idx]['score']
                 iou = ious[sample_idx]
                 gt_flag, pred_flag = gt_flags[sample_idx], pred_flags[
                     sample_idx]
@@ -131,6 +133,7 @@ def get_evaluation_results(gt_annos,
                     confusion_matrix[th_idx, 0] += tp
                     confusion_matrix[th_idx, 1] += fp
                     confusion_matrix[th_idx, 2] += fn
+       #     print('confusion_matrix:', confusion_matrix)
             ### draw p-r curve ###
             for th_idx in range(len(thresholds)):
                 recall[cls_idx, diff_idx, th_idx] = confusion_matrix[th_idx, 0] / \
@@ -146,10 +149,12 @@ def get_evaluation_results(gt_annos,
                 recall[cls_idx, diff_idx,
                        th_idx] = np.max(recall[cls_idx, diff_idx, th_idx:],
                                         axis=-1)
+
     AP = 0
     for i in range(1, precision.shape[-1]):
         AP += precision[..., i]
     AP = AP / num_pr_points * 100
+
     ret_dict = {}
 
     ret_str = "\n|AP@%-9s|" % (str(num_pr_points))
@@ -178,7 +183,6 @@ def get_evaluation_results(gt_annos,
     if print_ok:
         print(ret_str)
     return ret_str, ret_dict
-
 
 def get_evaluation_pr_results(gt_annos,
                               pred_annos,
@@ -241,7 +245,7 @@ def get_evaluation_pr_results(gt_annos,
             for sample_idx in range(num_samples):
                 gt_anno = gt_annos[sample_idx]
                 pred_anno = pred_annos[sample_idx]
-                pred_score = pred_anno['scores']
+                pred_score = pred_anno['score']
                 iou = ious[sample_idx]
                 gt_flag, pred_flag = filter_data(gt_anno,
                                                  pred_anno,
@@ -268,7 +272,7 @@ def get_evaluation_pr_results(gt_annos,
             confusion_matrix = np.zeros([len(thresholds),
                                          3])  # only record tp/fp/fn
             for sample_idx in range(num_samples):
-                pred_score = pred_annos[sample_idx]['scores']
+                pred_score = pred_annos[sample_idx]['score']
                 iou = ious[sample_idx]
                 gt_flag, pred_flag = gt_flags[sample_idx], pred_flags[
                     sample_idx]
@@ -291,89 +295,6 @@ def get_evaluation_pr_results(gt_annos,
                                                        (confusion_matrix[th_idx, 0] + confusion_matrix[th_idx, 1])
 
     return score_thres, precision, recall
-
-
-def get_track_evaluation_results(gt_annos,
-                                 pred_annos,
-                                 use_superclass=False,
-                                 iou_thresholds=None,
-                                 ap_with_heading=False,
-                                 num_parts=100,
-                                 print_ok=False):
-    # print('names:', classes)
-
-    if iou_thresholds is None:
-        if use_superclass:
-            iou_thresholds = superclass_iou_threshold_dict
-        else:
-            iou_thresholds = iou_threshold_dict
-    print("gt_annos:", len(gt_annos), len(pred_annos))
-    assert len(gt_annos) == len(
-        pred_annos), "the number of GT must match predictions"
-
-    num_samples = len(gt_annos)
-    split_parts = compute_split_parts(num_samples, num_parts)
-    ious = compute_iou3d(gt_annos,
-                         pred_annos,
-                         split_parts,
-                         with_heading=ap_with_heading)
-
-    id_swift = 0
-    id_sum = 0
-    tracking_id_list = set()
-    trajectories = dict()
-    for sample_idx in range(num_samples):
-        gt_anno = gt_annos[sample_idx]
-        pred_anno = pred_annos[sample_idx]
-        #    pred_score = pred_anno['score']
-        iou = ious[sample_idx]
-        matched_index = np.argmax(iou, axis=1)
-
-        if pred_anno['first_frame']:
-            print("trajectories: ", trajectories)
-            for traking_id, value_list in trajectories.items():
-                obj_info = dict()
-                #   print("obj_dict:", value_list)
-                for value in value_list:
-                    obj_info.setdefault(value[2], 0)
-                    obj_info[value[2]] += 1
-                id_sum += len(value_list)
-                id_swift += len(value_list) - max(
-                    [v for k, v in obj_info.items()])
-            trajectories = dict()
-
-        for i, index in enumerate(matched_index):
-            if index == 0 and iou[i][index] == 0:
-                #          gt_anno.setdefault('tracking_id', []).append(None)
-                continue
-            else:
-                tracking_id = pred_anno['tracking_id'][index]
-                tracking_id_list.add(tracking_id)
-                trajectories.setdefault(tracking_id, []).append([
-                    pred_anno['names'][index], gt_anno['names'][i],
-                    gt_anno['obj_id'][i], sample_idx
-                ])
-    #         gt_anno.setdefault('tracking_id', []).append(tracking_id)
-
-    print("id sum: ", id_sum)
-    print("id swift:", id_swift, id_swift / id_sum)
-
-    return
-
-
-# def match_post(iou, matched_index, gt_anno, pred_anno):
-#     print("iou:", iou)
-#     print("matched_index:", matched_index)
-#     print("gt_anno:", gt_anno)
-#     print("pred_anno: ", pred_anno)
-#     for i, index in enumerate(matched_index):
-#         if iou[i][index] == 0:
-#             matched_index[i] = 0
-#         else:
-#             while gt_anno['name'][i] != pred_anno['name'][index] and iou[i][index] != 0:
-#                 iou_list = iou[i]
-#                 iou[index] = 0
-#                 index = np.argmax(iou)
 
 
 @numba.jit(nopython=True)
@@ -510,32 +431,27 @@ def filter_data(gt_anno, pred_anno, difficulty_mode, difficulty_level,
             0 : accepted
            -1 : rejected with different classes
     """
-    pred_anno['names'] = np.array(pred_anno['names'])
-    num_gt = len(gt_anno['names'])
+    num_gt = len(gt_anno['name'])
     gt_flag = np.zeros(num_gt, dtype=np.int64)
     if use_superclass:
         if class_name == 'Vehicle':
-            reject = np.logical_or(gt_anno['names'] == 'Pedestrian',
-                                   gt_anno['names'] == 'Cyclist')
+            reject = np.logical_or(gt_anno['name'] == 'Pedestrian',
+                                   gt_anno['name'] == 'Cyclist')
         else:
-            reject = gt_anno['names'] != class_name
+            reject = gt_anno['name'] != class_name
     else:
-        # if difficulty_level == 0:
-        #     print("gt_anno_name:", gt_anno["name"], class_name)
-        reject = gt_anno['names'] != class_name
+        reject = gt_anno['name'] != class_name
     gt_flag[reject] = -1
-    num_pred = len(pred_anno['names'])
+    num_pred = len(pred_anno['name'])
     pred_flag = np.zeros(num_pred, dtype=np.int64)
     if use_superclass:
         if class_name == 'Vehicle':
-            reject = np.logical_or(pred_anno['names'] == 'Pedestrian',
-                                   pred_anno['names'] == 'Cyclist')
+            reject = np.logical_or(pred_anno['name'] == 'Pedestrian',
+                                   pred_anno['name'] == 'Cyclist')
         else:
-            reject = pred_anno['names'] != class_name
+            reject = pred_anno['name'] != class_name
     else:
-        # if difficulty_level == 0:
-        #     print("pred_anno_name:", pred_anno["name"], class_name)
-        reject = pred_anno['names'] != class_name
+        reject = pred_anno['name'] != class_name
     pred_flag[reject] = -1
 
     if difficulty_mode == 'Overall':
@@ -647,8 +563,8 @@ def compute_iou3d(gt_annos, pred_annos, split_parts, with_heading):
     Returns:
         ious: list of iou arrays for each sample
     """
-    gt_num_per_sample = np.stack([len(anno["names"]) for anno in gt_annos], 0)
-    pred_num_per_sample = np.stack([len(anno["names"]) for anno in pred_annos],
+    gt_num_per_sample = np.stack([len(anno["name"]) for anno in gt_annos], 0)
+    pred_num_per_sample = np.stack([len(anno["name"]) for anno in pred_annos],
                                    0)
     ious = []
     sample_idx = 0

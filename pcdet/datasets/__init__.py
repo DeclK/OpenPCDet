@@ -11,6 +11,7 @@ from .waymo.waymo_dataset import WaymoDataset
 from .pandaset.pandaset_dataset import PandasetDataset
 from .lyft.lyft_dataset import LyftDataset
 from .once.once_dataset import ONCEDataset
+from .aw.aw_dataset import AwDataset
 
 from .once.once_semi_dataset import ONCEPretrainDataset, ONCELabeledDataset, ONCEUnlabeledDataset, ONCETestDataset, split_once_semi_data
 
@@ -21,7 +22,8 @@ __all__ = {
     'WaymoDataset': WaymoDataset,
     'PandasetDataset': PandasetDataset,
     'LyftDataset': LyftDataset,
-    'ONCEDataset': ONCEDataset
+    'ONCEDataset': ONCEDataset,
+    'AwDataset': AwDataset,
 }
 
 _semi_dataset_dict = {
