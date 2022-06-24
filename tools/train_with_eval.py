@@ -43,7 +43,6 @@ def parse_config():
     parser.add_argument('--start_epoch', type=int, default=0, help='')
     parser.add_argument('--num_epochs_to_eval', type=int, default=0, help='number of checkpoints to be evaluated')
     parser.add_argument('--save_to_file', action='store_true', default=False, help='')
-    parser.add_argument('--eval_with_train', action='store_true', default=False, help='eval interval is ckpt save interval')
 
     args = parser.parse_args()
 

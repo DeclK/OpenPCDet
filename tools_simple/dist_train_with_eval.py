@@ -1,9 +1,9 @@
 import os
 
-CONFIG_FILE = './cfgs/aw_models/centerpoint.yaml'
+CONFIG_FILE = './cfgs/aw_models/centerpoint_iou.yaml'
 gpu_index = [2,3]
-sample_per_gpu = 8
-CKPT_CHEK_INTERVAL = 1
+sample_per_gpu = 12
+CKPT_CHEK_INTERVAL = 2
 
 NUM_GPUS = len(gpu_index)
 BATCH_SIZE = NUM_GPUS * sample_per_gpu
