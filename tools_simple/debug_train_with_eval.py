@@ -1,9 +1,8 @@
 import os
 
 CONFIG_FILE = './cfgs/aw_models/centerpoint.yaml'
-CKPT = '/home/chk/OpenPCDet/output/cfgs/aw_models/centerpoint/default/ckpt/checkpoint_epoch_100.pth'
 gpu_index = [1]
-sample_per_gpu = 4
+sample_per_gpu = 8
 
 NUM_GPUS = len(gpu_index)
 BATCH_SIZE = NUM_GPUS * sample_per_gpu
@@ -11,7 +10,5 @@ CUDA_INDEX = ','.join(map(str, gpu_index))
 
 os.chdir('/home/chk/OpenPCDet/tools')
 os.system(f"export CUDA_VISIBLE_DEVICES='{CUDA_INDEX}' && \
-            python test.py  \
-            --cfg_file {CONFIG_FILE}    \
-            --batch_size {BATCH_SIZE}   \
-            --ckpt {CKPT}")
+            python train_with_eval.py --cfg_file {CONFIG_FILE} --batch_size {BATCH_SIZE} \
+            --fix_random_seed")
