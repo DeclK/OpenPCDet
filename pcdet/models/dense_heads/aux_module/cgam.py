@@ -5,6 +5,24 @@ from torch.nn.init import kaiming_normal_
 from ...model_utils import centernet_utils
 from ....utils import loss_utils, box_utils
 
+
+class SE(nn.Module):
+    """ From SENet to fuse features from different branches """
+    def __init__(self, in_chnls, ratio=16):
+        super(SE, self).__init__()
+        self.squeeze = nn.AdaptiveAvgPool2d((1, 1))
+        self.compress = nn.Conv2d(in_chnls, in_chnls//ratio, 1, 1, 0)
+        self.excitation = nn.Conv2d(in_chnls//ratio, in_chnls, 1, 1, 0)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        out = self.squeeze(x)
+        out = self.compress(out)
+        out = self.relu(out)
+        out = self.excitation(out)
+        return torch.sigmoid(out)
+
+        
 class SeparateHead(nn.Module):
     def __init__(self, input_channels, sep_head_dict, init_bias=-2.19, use_bias=False):
         super().__init__()
@@ -245,6 +263,6 @@ class CGAM(nn.Module):
         merge_feat_list = []    # concat feat to merge with bev
         for pred_dict in pred_dicts:
             for _, feat in pred_dict.items():
-                merge_feat_list.append(feat)
+                    merge_feat_list.append(feat)
         merge_feat = torch.cat(merge_feat_list, dim=1)
-        return merge_feat
+        return merge_feat, pred_dicts

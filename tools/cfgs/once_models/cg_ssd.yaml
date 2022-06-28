@@ -31,6 +31,7 @@ MODEL:
         CLASS_AGNOSTIC: False
 
         USE_DIRECTION_CLASSIFIER: True
+        USE_SE_FUSION: True
         DIR_OFFSET: 0.78539
         DIR_LIMIT_OFFSET: 0.0
         NUM_DIR_BINS: 2

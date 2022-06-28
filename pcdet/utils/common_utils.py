@@ -5,6 +5,7 @@ import random
 import shutil
 import subprocess
 import SharedArray
+import time
 
 import numpy as np
 import torch
@@ -267,8 +268,34 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 def print_dict(dict_, content=False, level=0):
+    """ Print dict keys recurrsively """
     for k, v in dict_.items():
         print('\t' * level + f'{k}')
         if type(v) == dict:
             print_dict(v, content, level + 1)
         elif content: print(v, '\n', '-' * 20)
+
+
+class Timer:
+    """
+    A simple timer. You need to start timer first, and tick the time.
+    Use info function to print time info
+    """
+    def __init__(self) -> None:
+        self.time_list = []
+        self.name_list = []
+    def start(self):
+        self.time_list.append(time.time())
+        self.name_list.append('start')
+    def tick(self, str=None):
+        assert self.name_list[0] == 'start', 'Timer is not started'
+        self.time_list.append(time.time())
+        name = str if str else len(self.name_list)
+        self.name_list.append(name)
+    def info(self):
+        print('***********TIME INFO***********')
+        for i in range(1, len(self.time_list)):
+            diff = self.time_list[i] - self.time_list[i - 1]
+            print(f'{self.name_list[i]}: {diff:.3f}s')
+        print('*******************************')
+

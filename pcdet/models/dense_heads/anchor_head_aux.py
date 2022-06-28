@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from .anchor_head_template import AnchorHeadTemplate
-from .aux_module.cgam import CGAM
+from .aux_module.cgam import CGAM, SE
 
 
 class AnchorHeadAux(AnchorHeadTemplate):
@@ -19,7 +19,8 @@ class AnchorHeadAux(AnchorHeadTemplate):
         # adjust input channels for aux feature
         aux_channels = self.aux_module.corner_types * num_class  \
                      + self.aux_module.corner_types * model_cfg.CGAM.HEAD_DICT.corner.out_channels
-        input_channels = input_channels + aux_channels
+        if not self.model_cfg.get('USE_SE_FUSION', False): 
+            input_channels = input_channels + aux_channels
 
         self.num_anchors_per_location = sum(self.num_anchors_per_location)
 
@@ -40,6 +41,9 @@ class AnchorHeadAux(AnchorHeadTemplate):
             )
         else:
             self.conv_dir_cls = None
+        if self.model_cfg.get('USE_SE_FUSION', False): 
+            self.conv1 = nn.Conv2d(input_channels + aux_channels, input_channels, 3, 1, 1)
+            self.se = SE(input_channels)
 
         self.init_weights()
 
@@ -50,9 +54,13 @@ class AnchorHeadAux(AnchorHeadTemplate):
 
     def forward(self, data_dict):
         # aux module
-        aux_feat = self.aux_module(data_dict)
+        aux_feat, pred_corners = self.aux_module(data_dict)
         spatial_features_2d = data_dict['spatial_features_2d']
         spatial_features_2d = torch.cat((spatial_features_2d, aux_feat), dim=1)
+        if self.model_cfg.get('USE_SE_FUSION', False): 
+            spatial_features_2d = self.conv1(spatial_features_2d)
+            channel_weight = self.se(spatial_features_2d)
+            spatial_features_2d = spatial_features_2d * channel_weight
 
         cls_preds = self.conv_cls(spatial_features_2d)
         box_preds = self.conv_box(spatial_features_2d)

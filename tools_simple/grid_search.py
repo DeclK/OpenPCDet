@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import time
 from pathlib import Path
 import re
@@ -12,11 +13,12 @@ import re
     # 4. running scripts
 
 
-grid = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-config_file = Path('/home/chk/OpenPCDet/tempt_cfg.yaml')
+grid = np.round(np.linspace(0.4, 0.8, num=41), 2)
+grid = grid.tolist()
+config_file = Path('/home/chk/OpenPCDet/tools/cfgs/aw_models/centerpoint_iou.yaml')
 
-CKPT = '/home/chk/OpenPCDet/data/output/centerpoint_iou_v1.2_only_iou_rectify/cfgs/once_models/centerpoint_iou/default/ckpt/checkpoint_epoch_80.pth'
-gpu_index = [1]
+CKPT = '/home/chk/OpenPCDet/data/output_aw/aw_centerpoint_v1.1_iou/cfgs/aw_models/centerpoint_iou/default/ckpt/checkpoint_epoch_100.pth'
+gpu_index = [0, 1, 2, 3]
 sample_per_gpu = 4
 NUM_GPUS = len(gpu_index)
 BATCH_SIZE = NUM_GPUS * sample_per_gpu
@@ -32,7 +34,22 @@ for value in grid:
 
     time.sleep(0.5)
     os.system(f"export CUDA_VISIBLE_DEVICES='{CUDA_INDEX}' && \
-                python test.py  \
+                bash scripts/dist_test.sh {NUM_GPUS}          \
                 --cfg_file {config_file}    \
                 --batch_size {BATCH_SIZE}   \
-                --ckpt {CKPT}")
+                --ckpt {CKPT}"
+                )
+
+# Get result from output
+
+# from pathlib import Path
+# import re
+# dir = '/home/chk/OpenPCDet/output/home/chk/OpenPCDet/tools/cfgs/aw_models/centerpoint_iou/default/eval/epoch_100/test/default'
+# dir = Path(dir)
+# for f in dir.iterdir():
+#     str = f.read_text()
+#     pattern = re.compile(r'\|[\w\W]*\|')
+#     thresh = re.search(r'RECTIFIER: 0.\d*', str).group()
+#     ret = pattern.search(str).group()
+#     print(thresh)
+#     print(ret)

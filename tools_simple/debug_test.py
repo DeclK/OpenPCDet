@@ -1,7 +1,7 @@
 import os
 
-CONFIG_FILE = './cfgs/aw_models/centerpoint.yaml'
-CKPT = '/home/chk/OpenPCDet/output/cfgs/aw_models/centerpoint/default/ckpt/checkpoint_epoch_100.pth'
+CONFIG_FILE = './cfgs/once_models/cg_ssd.yaml'
+CKPT = '/home/chk/OpenPCDet/data/models/cg_ssd_v1.1_all_corners/cfgs/once_models/cg_ssd/default/ckpt/checkpoint_epoch_80.pth'
 gpu_index = [1]
 sample_per_gpu = 4
 
