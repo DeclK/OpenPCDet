@@ -1,9 +1,9 @@
 import os
 
-CONFIG_FILE = './cfgs/once_models/cg_ssd.yaml'
-CKPT = '/home/chk/OpenPCDet/data/models/cg_ssd_v1.1_all_corners/cfgs/once_models/cg_ssd/default/ckpt/checkpoint_epoch_80.pth'
+CONFIG_FILE = './cfgs/aw_models/centerpoint.yaml'
+CKPT = '/home/chk/OpenPCDet/data/output_aw/aw_centerpoint_baseline/cfgs/aw_models/centerpoint/default/ckpt/checkpoint_epoch_100.pth'
 gpu_index = [1]
-sample_per_gpu = 4
+sample_per_gpu = 1
 
 NUM_GPUS = len(gpu_index)
 BATCH_SIZE = NUM_GPUS * sample_per_gpu

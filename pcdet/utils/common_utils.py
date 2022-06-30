@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import SharedArray
 import time
+import pickle
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -275,6 +277,18 @@ def print_dict(dict_, content=False, level=0):
             print_dict(v, content, level + 1)
         elif content: print(v, '\n', '-' * 20)
 
+class EasyPickle:
+    """ Write open file scripts with pickle for quick load & dump """
+    @staticmethod
+    def load(file):
+        with open(file, 'rb') as f:
+            return pickle.load(f)
+    @staticmethod
+    def dump(obj, file):
+        file = Path(file)
+        file.touch(exist_ok=True)
+        with open(file, 'wb') as f:
+            pickle.dump(obj, f)
 
 class Timer:
     """

@@ -1,8 +1,8 @@
 import os
 
-CONFIG_FILE = './cfgs/aw_models/centerpoint_iou.yaml'
-gpu_index = [2,3]
-sample_per_gpu = 12
+CONFIG_FILE = './cfgs/once_models/centerpoint.yaml'
+gpu_index = [2,3,4,7]
+sample_per_gpu = 4
 CKPT_CHEK_INTERVAL = 2
 
 NUM_GPUS = len(gpu_index)
