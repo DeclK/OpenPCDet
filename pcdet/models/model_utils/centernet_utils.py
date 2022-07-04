@@ -68,6 +68,32 @@ def draw_gaussian_to_heatmap(heatmap, center, radius, k=1, valid_mask=None):
         torch.max(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
     return heatmap
 
+def draw_gaussian_corners_to_hm(heatmap, corners, radius):
+    """ 
+    Draw 4 corners to heatmap for 1 gt boxes
+    Params:
+        - heatmap: (4, H, W)
+        - corners: (4, 2) , pixel coords
+        - radius: int
+    """
+    assert len(heatmap.size()) == 3
+    diameter = 2 * radius + 1
+    gaussian = gaussian2D((diameter, diameter), sigma=diameter / 6)
+
+    x, y = corners[:, 0], corners[:, 1]   # (4, )
+    _, height, width = heatmap.size()
+    radius = torch.tensor(radius).to(x.dtype)
+
+    for i in range(x.size(0)):
+        left, right = min(x[i], radius), min(width - x[i], radius + 1)
+        top, bottom = min(y[i], radius), min(height - y[i], radius + 1)
+
+        masked_heatmap = heatmap[i][y[i] - top:y[i] + bottom, x[i] - left:x[i] + right]
+        masked_gaussian = torch.from_numpy(
+            gaussian[radius - top:radius + bottom, radius - left:radius + right]
+        ).to(heatmap.device).float()
+        torch.max(masked_heatmap, masked_gaussian, out=masked_heatmap)
+
 
 def _nms(heat, kernel=3):
     pad = (kernel - 1) // 2

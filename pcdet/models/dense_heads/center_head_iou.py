@@ -302,19 +302,28 @@ class CenterHeadIoU(nn.Module):
             batch_hm = pred_dict['hm'].sigmoid().permute(0, 2, 3, 1).view(B, H*W, -1)
 
             if 'iou' in pred_dict.keys():
-                batch_iou = pred_dict['iou'].permute(0, 2, 3, 1).view(B, H*W, -1)
+                batch_iou = pred_dict['iou'].permute(0, 2, 3, 1).view(B, H*W)
                 batch_iou = (batch_iou + 1) * 0.5
-            else: batch_iou = torch.ones((B, H*W, 1)).to(batch_hm.device)
+            else: batch_iou = torch.ones((B, H*W)).to(batch_hm.device)
 
             for i in range(B):   # for each batch
                 box_preds = batch_box_preds[i]
                 hm_preds = batch_hm[i]
-                iou_preds = batch_iou[i].view(-1)
-
+                iou_preds = batch_iou[i]
                 scores, labels = torch.max(hm_preds, dim=-1)
+
+                rectifier = post_process_cfg.get('RECTIFIER', 0.0)
+                rectifier = torch.tensor(rectifier).view(-1).to(scores.device)
+                if rectifier.size(0) > 1:   # class specific rectifier
+                    assert rectifier.size(0) == self.num_class
+                    rectifier = rectifier[labels]   # (H*W,)
+
+                scores = torch.pow(scores, 1 - rectifier) \
+                       * torch.pow(iou_preds, rectifier)
+
                 score_mask = scores > post_process_cfg.SCORE_THRESH
                 distance_mask = (box_preds[..., :3] >= post_center_range[:3]).all(1) \
-                    & (box_preds[..., :3] <= post_center_range[3:]).all(1)
+                              & (box_preds[..., :3] <= post_center_range[3:]).all(1)
                 mask = distance_mask & score_mask
 
                 box_preds = box_preds[mask]
@@ -322,29 +331,21 @@ class CenterHeadIoU(nn.Module):
                 labels = labels[mask]
                 iou_preds = torch.clamp(iou_preds[mask], min=0, max=1.)
 
-                rectifier = post_process_cfg.get('RECTIFIER', 0)
-                rectifier = torch.tensor(rectifier).float().view(-1).to(scores.device)  # (num_class,)
-                if rectifier.size(0) > 1:   # class specific rectifier
-                    assert rectifier.size(0) == self.num_class
-                    rectifier = rectifier[labels]   # (N,)
-
                 if post_process_cfg.NMS_CONFIG.NMS_NAME == 'agnostic_nms':
-                    scores = torch.pow(scores, 1 - rectifier) * torch.pow(iou_preds, rectifier)
-                    selected, selected_scores = model_nms_utils.class_agnostic_nms(
-                        box_scores=scores, box_preds=box_preds,
-                        nms_config=post_process_cfg.NMS_CONFIG,
+                    selected, selected_scores = \
+                            model_nms_utils.class_agnostic_nms(
+                            box_scores=scores, box_preds=box_preds,
+                            nms_config=post_process_cfg.NMS_CONFIG,
                     )
                     selected_boxes = box_preds[selected]
                     selected_labels = labels[selected]
 
                 elif post_process_cfg.NMS_CONFIG.NMS_NAME == 'class_specific_nms':
-                    scores = hm_preds[mask] # (N, num_class)
-                    rectifier = rectifier.view(-1, 1)   # for broadcast
-                    iou_preds = iou_preds.view(-1, 1)
-                    scores = torch.pow(scores, 1 - rectifier) * torch.pow(iou_preds, rectifier)
-                    selected_scores, selected_labels, selected_boxes = model_nms_utils.class_specific_nms(
-                        cls_scores=scores, box_preds=box_preds, labels=labels,
-                        nms_config=post_process_cfg.NMS_CONFIG,
+                    selected_scores, selected_labels, selected_boxes = \
+                            model_nms_utils.class_specific_nms(
+                                cls_scores=scores, box_preds=box_preds, 
+                                labels=labels, num_class=self.num_class,
+                                nms_config=post_process_cfg.NMS_CONFIG,
                     )
                 else:
                     raise NotImplementedError

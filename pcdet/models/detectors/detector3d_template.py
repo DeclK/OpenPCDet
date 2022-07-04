@@ -296,6 +296,7 @@ class Detector3DTemplate(nn.Module):
             for cur_thresh in thresh_list:
                 recall_dict['roi_%s' % (str(cur_thresh))] = 0
                 recall_dict['rcnn_%s' % (str(cur_thresh))] = 0
+                recall_dict['false_positive_%s' % (str(cur_thresh))] = 0    # CHK MARK, calculate false positive
 
         cur_gt = gt_boxes
         k = cur_gt.__len__() - 1
@@ -317,7 +318,9 @@ class Detector3DTemplate(nn.Module):
                     recall_dict['rcnn_%s' % str(cur_thresh)] += 0
                 else:
                     rcnn_recalled = (iou3d_rcnn.max(dim=0)[0] > cur_thresh).sum().item()
+                    rcnn_false_positive = iou3d_rcnn.size(0) - (iou3d_rcnn.max(dim=1)[0] > cur_thresh).sum().item()
                     recall_dict['rcnn_%s' % str(cur_thresh)] += rcnn_recalled
+                    recall_dict['false_positive_%s' % (str(cur_thresh))] += rcnn_false_positive
                 if rois is not None:
                     roi_recalled = (iou3d_roi.max(dim=0)[0] > cur_thresh).sum().item()
                     recall_dict['roi_%s' % str(cur_thresh)] += roi_recalled

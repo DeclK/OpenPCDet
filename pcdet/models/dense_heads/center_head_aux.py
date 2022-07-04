@@ -75,9 +75,8 @@ class CenterHeadAux(nn.Module):
         # CGAM module
         self.aux_module = CGAM(model_cfg.CGAM, input_channels, class_names, 
                                 grid_size, voxel_size, point_cloud_range)
-        # adjust input channels for aux feature
-        aux_channels = self.aux_module.corner_types * num_class  \
-                     + self.aux_module.corner_types * model_cfg.CGAM.HEAD_DICT.corner.out_channels
+        # adjust input channels for aux feature, hm + corner
+        aux_channels = self.aux_module.corner_types * (1 + 2)
         self.shared_conv = nn.Sequential(
             nn.Conv2d(
                 input_channels, self.model_cfg.SHARED_CONV_CHANNEL, 3, stride=1, padding=1,
@@ -310,7 +309,7 @@ class CenterHeadAux(nn.Module):
                     assert rectifier.size(0) == self.num_class
                     rectifier = rectifier[labels]   # (N,)
 
-                corner_scores = self.get_corner_score(corner_preds, box_preds)   # (N, C)
+                # corner_scores = self.get_corner_score(corner_preds, box_preds)   # (N, C)
 
                 if post_process_cfg.NMS_CONFIG.NMS_NAME == 'agnostic_nms':
                     scores = torch.pow(scores, 1 - rectifier) * torch.pow(iou_preds, rectifier)
@@ -325,7 +324,7 @@ class CenterHeadAux(nn.Module):
                     scores = hm_preds[mask] # (N, num_class)
                     rectifier = rectifier.view(-1, 1)   # for broadcast
                     iou_preds = iou_preds.view(-1, 1)
-                    scores = torch.pow(scores, 1 - rectifier) * torch.pow(iou_preds, rectifier) * torch.pow(corner_scores, rectifier)
+                    scores = torch.pow(scores, 1 - rectifier) * torch.pow(iou_preds, rectifier) # * torch.pow(corner_scores, rectifier)
                     selected_scores, selected_labels, selected_boxes = model_nms_utils.class_specific_nms(
                         cls_scores=scores, box_preds=box_preds, labels=labels,
                         nms_config=post_process_cfg.NMS_CONFIG,

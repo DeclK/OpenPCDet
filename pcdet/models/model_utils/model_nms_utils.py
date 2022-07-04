@@ -65,30 +65,29 @@ def multi_classes_nms(cls_scores, box_preds, nms_config, score_thresh=None):
 
     return pred_scores, pred_labels, pred_boxes
 
-def class_specific_nms(cls_scores, box_preds, labels, nms_config, score_thresh=None):
+def class_specific_nms(cls_scores, box_preds, labels, num_class, nms_config):
     """
     Args:
-        cls_scores: (N, num_class)
-        box_preds: (N, 7 + C)
-        labels: (N,)
-        nms_config:
+        cls_scores: (N,)
+        box_preds:  (N, 7+C)
+        labels:     (N,)
+        nms_config: include nms_type & nms_thresh
+        score_thresh: float or list
     Returns:
         pred_scores: (M,)
         ...
+    TODO: add score filter by class
     """
     pred_scores, pred_labels, pred_boxes = [], [], []
-    for k in range(cls_scores.shape[1]):
+    for k in range(num_class):
         mask = labels == k
-        cur_box_scores = cls_scores[mask, k]    # (M,)
-        cur_box_preds = box_preds[mask]         # (M, 7+C)
-        if score_thresh is not None:
-            scores_mask = (cur_box_scores[:, k] >= score_thresh)
-            cur_box_scores = cur_box_scores[scores_mask, k]
-            cur_box_preds = box_preds[scores_mask]
+        cur_box_scores = cls_scores[mask]    # (M,)
+        cur_box_preds = box_preds[mask]      # (M, 7+C)
 
         selected = []
         if cur_box_scores.shape[0] > 0:
-            box_scores_nms, indices = torch.topk(cur_box_scores, k=min(nms_config.NMS_PRE_MAXSIZE, cur_box_scores.shape[0]))
+            box_scores_nms, indices = torch.topk(
+                cur_box_scores, k=min(nms_config.NMS_PRE_MAXSIZE, cur_box_scores.shape[0]))
             boxes_for_nms = cur_box_preds[indices]
             keep_idx, selected_scores = getattr(iou3d_nms_utils, nms_config.NMS_TYPE)(
                     boxes_for_nms[:, 0:7], box_scores_nms, nms_config.NMS_THRESH, **nms_config

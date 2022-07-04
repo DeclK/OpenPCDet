@@ -273,7 +273,7 @@ def print_dict(dict_, content=False, level=0):
     """ Print dict keys recurrsively """
     for k, v in dict_.items():
         print('\t' * level + f'{k}')
-        if type(v) == dict:
+        if isinstance(v, dict):
             print_dict(v, content, level + 1)
         elif content: print(v, '\n', '-' * 20)
 
@@ -285,7 +285,8 @@ class EasyPickle:
             return pickle.load(f)
     @staticmethod
     def dump(obj, file):
-        file = Path(file)
+        if not isinstance(file, Path):
+            file = Path(file)
         file.touch(exist_ok=True)
         with open(file, 'wb') as f:
             pickle.dump(obj, f)
