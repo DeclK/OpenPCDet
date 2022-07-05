@@ -57,6 +57,7 @@ class CenterHeadAux(nn.Module):
         self.point_cloud_range = point_cloud_range
         self.voxel_size = voxel_size
         self.feature_map_stride = self.model_cfg.TARGET_ASSIGNER_CONFIG.get('FEATURE_MAP_STRIDE', None)
+        self.rectifier = torch.tensor(model_cfg.POST_PROCESSING.get('RECTIFIER', 0.0)).view(-1).cuda()
 
         self.class_names = class_names
         self.class_names_each_head = []
@@ -263,7 +264,6 @@ class CenterHeadAux(nn.Module):
     def generate_predicted_boxes(self, batch_size, pred_dicts, pred_corners):
         post_process_cfg = self.model_cfg.POST_PROCESSING
         post_center_range = torch.tensor(post_process_cfg.POST_CENTER_LIMIT_RANGE).cuda().float()
-        batch_corners = self.compact_corner(pred_corners)
 
         ret_dict = [{
             'pred_boxes': [],
@@ -278,24 +278,36 @@ class CenterHeadAux(nn.Module):
                 point_cloud_range=self.point_cloud_range
             )
             B, _, H, W = batch_box_preds.size()
-            batch_box_preds = batch_box_preds.permute(0, 2, 3, 1).view(B, H*W, -1)
             batch_hm = pred_dict['hm'].sigmoid().permute(0, 2, 3, 1).view(B, H*W, -1)
+            batch_box_preds = batch_box_preds.permute(0, 2, 3, 1).view(B, H*W, -1)
+            batch_cnr_hm = pred_corners['hm']
 
             if 'iou' in pred_dict.keys():
-                batch_iou = pred_dict['iou'].permute(0, 2, 3, 1).view(B, H*W, -1)
+                batch_iou = pred_dict['iou'].permute(0, 2, 3, 1).view(B, H*W)
                 batch_iou = (batch_iou + 1) * 0.5
-            else: batch_iou = torch.ones((B, H*W, 1)).to(batch_hm.device)
+            else: batch_iou = torch.ones((B, H*W)).to(batch_hm.device)
 
             for i in range(B):   # for each batch
                 box_preds = batch_box_preds[i]
-                corner_preds= batch_corners['hm'][i]  # CHK MARK, (4, C, H, W)
+                cnr_preds = batch_cnr_hm[i]
+                iou_preds = batch_iou[i]
                 hm_preds = batch_hm[i]
-                iou_preds = batch_iou[i].view(-1)
-
                 scores, labels = torch.max(hm_preds, dim=-1)
+
+                cnr_score = self.aux_module.get_corner_scores(cnr_preds, box_preds)
+
+                if self.rectifier.size(0) > 1:           # class specific
+                    assert self.rectifier.size(0) == self.num_class
+                    rectifier = self.rectifier[labels]   # (H*W,)
+                else: rectifier = self.rectifier
+
+                scores = torch.pow(scores, 1 - rectifier)   \
+                       * torch.pow(iou_preds, rectifier)    \
+                    #    * torch.pow(cnr_score, rectifier) TODO: tune rectifier
+
                 score_mask = scores > post_process_cfg.SCORE_THRESH
                 distance_mask = (box_preds[..., :3] >= post_center_range[:3]).all(1) \
-                    & (box_preds[..., :3] <= post_center_range[3:]).all(1)
+                              & (box_preds[..., :3] <= post_center_range[3:]).all(1)
                 mask = distance_mask & score_mask
 
                 box_preds = box_preds[mask]
@@ -303,31 +315,21 @@ class CenterHeadAux(nn.Module):
                 labels = labels[mask]
                 iou_preds = torch.clamp(iou_preds[mask], min=0, max=1.)
 
-                rectifier = post_process_cfg.get('RECTIFIER', 0)
-                rectifier = torch.tensor(rectifier).float().view(-1).to(scores.device)  # (num_class,)
-                if rectifier.size(0) > 1:   # class specific rectifier
-                    assert rectifier.size(0) == self.num_class
-                    rectifier = rectifier[labels]   # (N,)
-
-                # corner_scores = self.get_corner_score(corner_preds, box_preds)   # (N, C)
-
                 if post_process_cfg.NMS_CONFIG.NMS_NAME == 'agnostic_nms':
-                    scores = torch.pow(scores, 1 - rectifier) * torch.pow(iou_preds, rectifier)
-                    selected, selected_scores = model_nms_utils.class_agnostic_nms(
-                        box_scores=scores, box_preds=box_preds,
-                        nms_config=post_process_cfg.NMS_CONFIG,
+                    selected, selected_scores = \
+                            model_nms_utils.class_agnostic_nms(
+                            box_scores=scores, box_preds=box_preds,
+                            nms_config=post_process_cfg.NMS_CONFIG,
                     )
                     selected_boxes = box_preds[selected]
                     selected_labels = labels[selected]
 
                 elif post_process_cfg.NMS_CONFIG.NMS_NAME == 'class_specific_nms':
-                    scores = hm_preds[mask] # (N, num_class)
-                    rectifier = rectifier.view(-1, 1)   # for broadcast
-                    iou_preds = iou_preds.view(-1, 1)
-                    scores = torch.pow(scores, 1 - rectifier) * torch.pow(iou_preds, rectifier) # * torch.pow(corner_scores, rectifier)
-                    selected_scores, selected_labels, selected_boxes = model_nms_utils.class_specific_nms(
-                        cls_scores=scores, box_preds=box_preds, labels=labels,
-                        nms_config=post_process_cfg.NMS_CONFIG,
+                    selected_scores, selected_labels, selected_boxes = \
+                            model_nms_utils.class_specific_nms(
+                                cls_scores=scores, box_preds=box_preds, 
+                                labels=labels, num_class=self.num_class,
+                                nms_config=post_process_cfg.NMS_CONFIG,
                     )
                 else:
                     raise NotImplementedError
@@ -367,7 +369,7 @@ class CenterHeadAux(nn.Module):
         spatial_features_2d = data_dict['spatial_features_2d']
         aux_feat, pred_corners = self.aux_module(data_dict)   # aux module
         x = self.shared_conv(spatial_features_2d)
-        x = torch.cat((x, aux_feat), dim=1)
+        x = torch.cat((x, aux_feat.detach()), dim=1)
 
         pred_dicts = []
         for head in self.heads_list:
@@ -397,42 +399,3 @@ class CenterHeadAux(nn.Module):
                 data_dict['final_box_dicts'] = pred_dicts
 
         return data_dict
-
-    def compact_corner(self, pred_corners):
-        """
-        Make corner prediction more compact
-        return:
-            hm: (B, 4, C, H, W)
-            corner: (B, 4, 2, H, W)
-        """
-        hm_list, corner_list = [], []
-        ret_dict = {}
-        for pred_corner in pred_corners:
-            hm_list.append(pred_corner['hm'])
-            corner_list.append(pred_corner['corner'])
-        ret_dict['hm'] = torch.stack(hm_list, dim=1)
-        ret_dict['corner'] = torch.stack(corner_list, dim=1)
-        return ret_dict
-
-    def get_corner_score(self, corner_hm, boxes):
-        """
-        boxes: (N, 7)
-        corner_hm: (4, C, H, W)
-        returns: mean of 4 corners score for each class (N, C)
-        """
-        origin_x = (self.point_cloud_range[0] + self.point_cloud_range[3]) / 2
-        origin_y = (self.point_cloud_range[1] + self.point_cloud_range[4]) / 2
-        H = (self.point_cloud_range[4] - self.point_cloud_range[1]) / 2 
-        W = (self.point_cloud_range[3] - self.point_cloud_range[0]) / 2 
-        corners = boxes_to_corners_3d(boxes)[:, :4, :2] # (N, 4, 2)
-        corners_x = (corners[..., 0] - origin_x) / W
-        corners_y = (corners[..., 1] - origin_y) / H
-        corners_xy = torch.stack((corners_x, corners_y), dim=-1).unsqueeze(0) # (1, N, 4, 2)
-        corners_xy = corners_xy.repeat(4, 1, 1, 1)
-
-        scores_xy = F.grid_sample(corner_hm, corners_xy)   # (4, C, N, 4) 
-        scores_xy = scores_xy[[0,1,2,3], ..., [0,1,2,3]]    # (4, C, N)
-        scores_mean = scores_xy.mean(dim=0).permute(1, 0).contiguous() # (N, C)
-
-        return scores_mean
-

@@ -5,7 +5,6 @@ import torch.nn.functional as F
 
 from . import box_utils
 from ..ops.iou3d_nms.iou3d_nms_utils import boxes_iou3d_gpu
-from ..models.model_utils.centernet_utils import bbox3d_overlaps_diou, bbox3d_overlaps_giou, bbox3d_overlaps_iou
 
 class SigmoidFocalClassificationLoss(nn.Module):
     """
@@ -409,36 +408,6 @@ class IouLoss(nn.Module):
     target = 2 * target - 1
     loss = F.l1_loss(pred, target, reduction='sum')
     loss = loss / (mask.sum() + 1e-4)
-    return loss
-
-class IouRegLoss(nn.Module):
-  '''Distance IoU loss for output boxes
-    Arguments:
-      output (batch x dim x h x w)
-      mask (batch x max_objects)
-      ind (batch x max_objects)
-      target (batch x max_objects x dim)
-  '''
-
-  def __init__(self, type="IoU"):
-    super(IouRegLoss, self).__init__()
-
-    if type == "IoU":
-      self.bbox3d_iou_func = bbox3d_overlaps_iou
-    elif type == "GIoU":
-      self.bbox3d_iou_func = bbox3d_overlaps_giou
-    elif type == "DIoU":
-      self.bbox3d_iou_func = bbox3d_overlaps_diou
-    else:
-      raise NotImplementedError
-
-  def forward(self, box_pred, mask, ind, box_gt):
-    if mask.sum() == 0:
-      return box_pred.new_zeros((1))
-    mask = mask.bool()
-    pred_box = _transpose_and_gather_feat(box_pred, ind)
-    iou = self.bbox3d_iou_func(pred_box[mask], box_gt[mask])
-    loss = (1. - iou).sum() / (mask.sum() + 1e-4)   # why 1e-4?
     return loss
 
 # COPY FROM SA-SSD

@@ -118,12 +118,14 @@ class SCBEVBackbone(nn.Module):
             cur_stride = layer_strides[idx]
 
             cur_layers = [
-                nn.Conv2d(cur_c_in, cur_c_out, 3, stride=cur_stride, padding=1, bias=False),
+                nn.Conv2d(cur_c_in, cur_c_out, 3,
+                    stride=cur_stride, padding=1, bias=False),
                 norm_fn(cur_c_out),
                 nn.ReLU()
             ]
             for _ in range(layer_nums[idx]):
-                cur_layers.append(SCBottleneck(cur_c_out, cur_c_out, stride=1, norm_fn=norm_fn))
+                cur_layers.append(SCBottleneck(
+                    cur_c_out, cur_c_out, stride=1, norm_fn=norm_fn))
             self.blocks.append(nn.Sequential(*cur_layers))
 
             # upsample
@@ -131,14 +133,16 @@ class SCBEVBackbone(nn.Module):
             cur_c_up_out= num_upsample_filters[idx]
             if cur_up_stride > 1:
                 self.deblocks.append(nn.Sequential(
-                    nn.ConvTranspose2d(cur_c_out, cur_c_up_out, cur_up_stride, stride=cur_up_stride, bias=False),
+                    nn.ConvTranspose2d(cur_c_out, cur_c_up_out, 
+                        cur_up_stride,stride=cur_up_stride,bias=False),
                     norm_fn(cur_c_up_out),
                     nn.ReLU(),
                 ))
             else:
                 cur_up_stride = np.round(1 / cur_up_stride).astype(np.int)
                 self.deblocks.append(nn.Sequential(
-                    nn.Conv2d(cur_c_out, cur_c_up_out, cur_up_stride, stride=cur_up_stride, bias=False),
+                    nn.Conv2d(cur_c_out, cur_c_up_out, cur_up_stride,
+                        stride=cur_up_stride, bias=False),
                     norm_fn(cur_c_up_out),
                     nn.ReLU(),
                 ))

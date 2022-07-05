@@ -18,7 +18,7 @@ MODEL:
         NUM_BEV_FEATURES: 64
 
     BACKBONE_2D:
-        NAME: BaseBEVBackbone
+        NAME: BaseBEVBackbonePCDet
         LAYER_NUMS: [3, 5, 5]
         LAYER_STRIDES: [2, 2, 2]
         NUM_FILTERS: [64, 128, 256]
@@ -61,7 +61,7 @@ MODEL:
             }
 
         POST_PROCESSING:
-            SCORE_THRESH: 0.1
+            SCORE_THRESH: 0.3
             POST_CENTER_LIMIT_RANGE: [-61.2, -61.2, -10.0, 61.2, 61.2, 10.0]
             MAX_OBJ_PER_SAMPLE: 500
             RECTIFIER: [0.7, 0.67, 0.53, 0.65]

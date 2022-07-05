@@ -26,7 +26,7 @@ class PillarVFE(VFETemplate):
         self.use_norm = self.model_cfg.USE_NORM
         self.with_distance = self.model_cfg.WITH_DISTANCE
         self.use_absolute_xyz = self.model_cfg.USE_ABSLOTE_XYZ
-        num_point_features += 6 if self.use_absolute_xyz else 3
+        num_point_features += 5 if self.use_absolute_xyz else 3
         self.num_point_features = num_point_features
 
         self.num_filters = self.model_cfg.NUM_FILTERS
@@ -55,7 +55,7 @@ class PillarVFE(VFETemplate):
         forward input only contains Tensor.
         So, assuming the features are already processed as
         (max_num_pillars, max_points_per_pillars, num_point_features + 6)
-        extra 6 feats are offset to mean position (3) and voxel center (3)
+        extra 6 feats are offset to mean position (3) and voxel center (2)
         """
         for pfn in self.pfn_layers:
             features = pfn(features)

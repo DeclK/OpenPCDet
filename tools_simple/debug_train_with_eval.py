@@ -1,6 +1,6 @@
 import os
 
-CONFIG_FILE = './cfgs/aw_models/centerpoint.yaml'
+CONFIG_FILE = './cfgs/aw_models/centerpoint_iou.yaml'
 gpu_index = [1]
 sample_per_gpu = 8
 

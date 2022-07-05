@@ -1,6 +1,7 @@
 import copy
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.init import kaiming_normal_
 from ...model_utils import centernet_utils
 from ....utils import loss_utils, box_utils
@@ -247,4 +248,30 @@ class CGAM(nn.Module):
             for _, feat in pred_dict.items():
                     merge_feat_list.append(feat)
         merge_feat = torch.cat(merge_feat_list, dim=1)
-        return merge_feat, pred_dicts
+        return merge_feat, pred_dicts[0]
+
+    def get_corner_scores(self, corner_hm, boxes):
+        """
+        Calculate corner score for each box, corner quality can help to rectify
+        predicted box quality
+        Params:
+            - boxes: (H*W, 7)
+            - corner_hm: (4, H, W)
+        returns: mean of 4 corners score for each box (H*W,)
+        """
+        origin_x = (self.point_cloud_range[0] + self.point_cloud_range[3]) / 2
+        origin_y = (self.point_cloud_range[1] + self.point_cloud_range[4]) / 2
+        H = (self.point_cloud_range[4] - self.point_cloud_range[1]) / 2 
+        W = (self.point_cloud_range[3] - self.point_cloud_range[0]) / 2 
+
+        corners = box_utils.boxes_to_corners_3d(boxes)[:, :4, :2]               # (N, 4, 2)
+        corners_x = (corners[..., 0] - origin_x) / W
+        corners_y = (corners[..., 1] - origin_y) / H
+        corners_xy = torch.stack((corners_x, corners_y), dim=-1).unsqueeze(0)   # (1, N, 4, 2)
+
+        corner_hm = corner_hm.unsqueeze(0)                  # (1, 4, H, W)
+        scores_xy = F.grid_sample(corner_hm, corners_xy)    # (1, 4, N, 4) 
+        scores_xy = scores_xy[0, [0,1,2,3], :, [0,1,2,3]]   # (4, N)
+        scores_mean = scores_xy.mean(dim=0)                 # (N,)
+
+        return scores_mean

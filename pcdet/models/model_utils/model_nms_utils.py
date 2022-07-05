@@ -65,22 +65,25 @@ def multi_classes_nms(cls_scores, box_preds, nms_config, score_thresh=None):
 
     return pred_scores, pred_labels, pred_boxes
 
-def class_specific_nms(cls_scores, box_preds, labels, num_class, nms_config):
+def class_specific_nms(cls_scores, box_preds, labels, num_class, nms_config, score_thresh=None):
     """
     Args:
         cls_scores: (N,)
         box_preds:  (N, 7+C)
         labels:     (N,)
         nms_config: include nms_type & nms_thresh
-        score_thresh: float or list
+        score_thresh: a list of threshold, filter each class respectively
     Returns:
         pred_scores: (M,)
         ...
-    TODO: add score filter by class
     """
+    if score_thresh is not None:
+        assert len(score_thresh) == num_class
     pred_scores, pred_labels, pred_boxes = [], [], []
     for k in range(num_class):
         mask = labels == k
+        if score_thresh is not None:
+            mask &= cls_scores > score_thresh[k]
         cur_box_scores = cls_scores[mask]    # (M,)
         cur_box_preds = box_preds[mask]      # (M, 7+C)
 

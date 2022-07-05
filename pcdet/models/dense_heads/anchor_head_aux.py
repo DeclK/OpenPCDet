@@ -55,7 +55,7 @@ class AnchorHeadAux(AnchorHeadTemplate):
         # aux module
         aux_feat, pred_corners = self.aux_module(data_dict)
         spatial_features_2d = data_dict['spatial_features_2d']
-        spatial_features_2d = torch.cat((spatial_features_2d, aux_feat), dim=1)
+        spatial_features_2d = torch.cat((spatial_features_2d, aux_feat.detach()), dim=1)
         if self.model_cfg.get('USE_SE_FUSION', False): 
             spatial_features_2d = self.conv1(spatial_features_2d)
             channel_weight = self.se(spatial_features_2d)

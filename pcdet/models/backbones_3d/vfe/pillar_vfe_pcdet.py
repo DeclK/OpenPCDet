@@ -49,15 +49,14 @@ class PFNLayer(nn.Module):
             return x_concatenated
 
 
-class PillarVFE(VFETemplate):
+class PillarVFEPCDet(VFETemplate):
     def __init__(self, model_cfg, num_point_features, voxel_size, point_cloud_range, **kwargs):
         super().__init__(model_cfg=model_cfg)
 
         self.use_norm = self.model_cfg.USE_NORM
         self.with_distance = self.model_cfg.WITH_DISTANCE
         self.use_absolute_xyz = self.model_cfg.USE_ABSLOTE_XYZ
-        # CHK MARK, for ONNX need, make num_point_features = 9
-        num_point_features += 5 if self.use_absolute_xyz else 3
+        num_point_features += 6 if self.use_absolute_xyz else 3
         if self.with_distance:
             num_point_features += 1
 
@@ -98,10 +97,10 @@ class PillarVFE(VFETemplate):
         points_mean = voxel_features[:, :, :3].sum(dim=1, keepdim=True) / voxel_num_points.type_as(voxel_features).view(-1, 1, 1)
         f_cluster = voxel_features[:, :, :3] - points_mean
 
-        f_center = torch.zeros_like(voxel_features[:, :, :2])
+        f_center = torch.zeros_like(voxel_features[:, :, :3])
         f_center[:, :, 0] = voxel_features[:, :, 0] - (coords[:, 3].to(voxel_features.dtype).unsqueeze(1) * self.voxel_x + self.x_offset)
         f_center[:, :, 1] = voxel_features[:, :, 1] - (coords[:, 2].to(voxel_features.dtype).unsqueeze(1) * self.voxel_y + self.y_offset)
-        # f_center[:, :, 2] = voxel_features[:, :, 2] - (coords[:, 1].to(voxel_features.dtype).unsqueeze(1) * self.voxel_z + self.z_offset)
+        f_center[:, :, 2] = voxel_features[:, :, 2] - (coords[:, 1].to(voxel_features.dtype).unsqueeze(1) * self.voxel_z + self.z_offset)
 
         if self.use_absolute_xyz:
             features = [voxel_features, f_cluster, f_center]

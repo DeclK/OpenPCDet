@@ -5,80 +5,68 @@ import torch.nn as nn
 from torch.nn.init import kaiming_normal_
 from pcdet.models.model_utils import centernet_utils
 
+from functools import partial
+norm_fn = partial(nn.BatchNorm2d, eps=1e-3, momentum=0.01)
+
 
 class BaseBEVBackbone(nn.Module):
     def __init__(self, model_cfg, input_channels):
         super().__init__()
         self.model_cfg = model_cfg
+        assert len(self.model_cfg.LAYER_NUMS) == len(self.model_cfg.LAYER_STRIDES) == len(self.model_cfg.NUM_FILTERS)
+        assert len(self.model_cfg.LAYER_NUMS) == len(self.model_cfg.UPSAMPLE_STRIDES), 'must have upsample process'
 
-        if self.model_cfg.get('LAYER_NUMS', None) is not None:
-            assert len(self.model_cfg.LAYER_NUMS) == len(self.model_cfg.LAYER_STRIDES) == len(self.model_cfg.NUM_FILTERS)
-            layer_nums = self.model_cfg.LAYER_NUMS
-            layer_strides = self.model_cfg.LAYER_STRIDES
-            num_filters = self.model_cfg.NUM_FILTERS
-        else:
-            layer_nums = layer_strides = num_filters = []
+        layer_nums = self.model_cfg.LAYER_NUMS
+        layer_strides = self.model_cfg.LAYER_STRIDES
+        num_filters = self.model_cfg.NUM_FILTERS
+        num_upsample_filters = self.model_cfg.NUM_UPSAMPLE_FILTERS
+        upsample_strides = self.model_cfg.UPSAMPLE_STRIDES
 
-        if self.model_cfg.get('UPSAMPLE_STRIDES', None) is not None:
-            assert len(self.model_cfg.UPSAMPLE_STRIDES) == len(self.model_cfg.NUM_UPSAMPLE_FILTERS)
-            num_upsample_filters = self.model_cfg.NUM_UPSAMPLE_FILTERS
-            upsample_strides = self.model_cfg.UPSAMPLE_STRIDES
-        else:
-            upsample_strides = num_upsample_filters = []
-
-        num_levels = len(layer_nums)
+        num_levels = len(layer_nums) # normally is 2
         c_in_list = [input_channels, *num_filters[:-1]]
         self.blocks = nn.ModuleList()
         self.deblocks = nn.ModuleList()
+
         for idx in range(num_levels):
+            # downsample
+            cur_c_out = num_filters[idx]
+            cur_c_in = c_in_list[idx]
+            cur_stride = layer_strides[idx]
+
             cur_layers = [
-                nn.ZeroPad2d(1),
-                nn.Conv2d(
-                    c_in_list[idx], num_filters[idx], kernel_size=3,
-                    stride=layer_strides[idx], padding=0, bias=False
-                ),
-                nn.BatchNorm2d(num_filters[idx], eps=1e-3, momentum=0.01),
+                nn.Conv2d(cur_c_in, cur_c_out, 3,
+                    stride=cur_stride, padding=1, bias=False),
+                norm_fn(cur_c_out),
                 nn.ReLU()
             ]
-            for k in range(layer_nums[idx]):
+            for _ in range(layer_nums[idx]):
                 cur_layers.extend([
-                    nn.Conv2d(num_filters[idx], num_filters[idx], kernel_size=3, padding=1, bias=False),
-                    nn.BatchNorm2d(num_filters[idx], eps=1e-3, momentum=0.01),
+                    nn.Conv2d(cur_c_out, cur_c_out, 3,
+                              padding=1, bias=False),
+                    norm_fn(cur_c_out),
                     nn.ReLU()
                 ])
             self.blocks.append(nn.Sequential(*cur_layers))
-            if len(upsample_strides) > 0:
-                stride = upsample_strides[idx]
-                if stride >= 1:
-                    self.deblocks.append(nn.Sequential(
-                        nn.ConvTranspose2d(
-                            num_filters[idx], num_upsample_filters[idx],
-                            upsample_strides[idx],
-                            stride=upsample_strides[idx], bias=False
-                        ),
-                        nn.BatchNorm2d(num_upsample_filters[idx], eps=1e-3, momentum=0.01),
-                        nn.ReLU()
-                    ))
-                else:
-                    stride = np.round(1 / stride).astype(np.int)
-                    self.deblocks.append(nn.Sequential(
-                        nn.Conv2d(
-                            num_filters[idx], num_upsample_filters[idx],
-                            stride,
-                            stride=stride, bias=False
-                        ),
-                        nn.BatchNorm2d(num_upsample_filters[idx], eps=1e-3, momentum=0.01),
-                        nn.ReLU()
-                    ))
 
+            # upsample
+            cur_up_stride = upsample_strides[idx]
+            cur_c_up_out= num_upsample_filters[idx]
+            if cur_up_stride > 1:
+                self.deblocks.append(nn.Sequential(
+                    nn.ConvTranspose2d(cur_c_out, cur_c_up_out, 
+                        cur_up_stride,stride=cur_up_stride,bias=False),
+                    norm_fn(cur_c_up_out),
+                    nn.ReLU(),
+                ))
+            else:
+                cur_up_stride = np.round(1 / cur_up_stride).astype(np.int)
+                self.deblocks.append(nn.Sequential(
+                    nn.Conv2d(cur_c_out, cur_c_up_out, cur_up_stride,
+                        stride=cur_up_stride, bias=False),
+                    norm_fn(cur_c_up_out),
+                    nn.ReLU(),
+                ))
         c_in = sum(num_upsample_filters)
-        if len(upsample_strides) > num_levels:
-            self.deblocks.append(nn.Sequential(
-                nn.ConvTranspose2d(c_in, c_in, upsample_strides[-1], stride=upsample_strides[-1], bias=False),
-                nn.BatchNorm2d(c_in, eps=1e-3, momentum=0.01),
-                nn.ReLU(),
-            ))
-
         self.num_bev_features = c_in
 
     def forward(self, x, **kwags):
@@ -138,6 +126,7 @@ class CenterHeadIoU(nn.Module):
         self.point_cloud_range = point_cloud_range
         self.voxel_size = voxel_size
         self.feature_map_stride = self.model_cfg.TARGET_ASSIGNER_CONFIG.get('FEATURE_MAP_STRIDE', None)
+        self.rectifier = torch.tensor(model_cfg.POST_PROCESSING.get('RECTIFIER', 0.0)).view(-1).cuda()
 
         self.class_names = class_names
         self.class_names_each_head = []
@@ -182,56 +171,6 @@ class CenterHeadIoU(nn.Module):
         y = torch.clamp(x.sigmoid(), min=1e-4, max=1 - 1e-4)
         return y
 
-    def get_loss(self):
-        pred_dicts = self.forward_ret_dict['pred_dicts']
-        target_dicts = self.forward_ret_dict['target_dicts']
-
-        tb_dict = {}
-        loss = 0
-
-        for idx, pred_dict in enumerate(pred_dicts):
-            pred_dict['hm'] = self.sigmoid(pred_dict['hm'])
-            hm_loss = self.hm_loss_func(pred_dict['hm'], target_dicts['heatmaps'][idx])
-            hm_loss *= self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['cls_weight']
-
-            target_boxes = target_dicts['target_boxes'][idx]
-            gt_boxes = target_dicts['gt_boxes'][idx]
-            mask = target_dicts['masks'][idx]
-            ind = target_dicts['inds'][idx]
-
-            # ususal box regression
-            pred_boxes = torch.cat([pred_dict[head_name] for head_name in self.separate_head_cfg.HEAD_ORDER], dim=1)
-            reg_loss = self.reg_loss_func(pred_boxes, mask, ind, target_boxes)
-            loc_loss = (reg_loss * reg_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['code_weights'])).sum()
-            loc_loss = loc_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
-
-            # IoU based regression loss
-            pred_boxes = centernet_utils.generate_dense_boxes(
-                pred_dict=pred_dict,
-                feature_map_stride=self.feature_map_stride,
-                voxel_size=self.voxel_size,
-                point_cloud_range=self.point_cloud_range)
-            pred_boxes = torch.clamp(pred_boxes, min=-200., max=200.)   # avoid large number          
-            # iou_reg_loss = self.iou_reg_loss_func(pred_boxes, mask, ind, gt_boxes)
-            # iou_reg_loss *= self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['iou_reg_weight']
-            iou_reg_loss = 0
-
-            # IoU prediction loss
-            if pred_dict.get('iou', None) is not None:
-                pred_boxes_for_iou = pred_boxes.detach()
-                iou_loss = self.iou_loss_func(pred_dict['iou'], mask, ind, pred_boxes_for_iou, gt_boxes)
-                iou_loss *= self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['iou_weight']
-                tb_dict['iou_loss_%d' % idx] = iou_loss.item()
-            else: iou_loss = 0
-
-            loss += hm_loss + loc_loss + iou_reg_loss + iou_loss
-            # tb_dict['iou_reg_loss_head_%d' % idx] = iou_reg_loss.item()
-            tb_dict['hm_loss_head_%d' % idx] = hm_loss.item()
-            tb_dict['loc_loss_head_%d' % idx] = loc_loss.item()
-
-        tb_dict['rpn_loss'] = loss.item()
-        return loss, tb_dict
-
     def generate_predicted_boxes(self, batch_size, pred_dicts):
         post_process_cfg = self.model_cfg.POST_PROCESSING
         ret_dict = [{
@@ -256,17 +195,16 @@ class CenterHeadIoU(nn.Module):
                 batch_iou = (batch_iou + 1) * 0.5
             else: batch_iou = torch.ones((B, H*W)).to(batch_hm.device)
 
-            for i in range(B):                                  # for each batch
+            for i in range(B):  # for each batch
                 box_preds = batch_box_preds[i]
                 hm_preds = batch_hm[i]
                 iou_preds = batch_iou[i]
                 scores, labels = torch.max(hm_preds, dim=-1)    # (H*W,)
 
-                rectifier = post_process_cfg.get('RECTIFIER', 0.0)
-                rectifier = torch.tensor(rectifier).view(-1).to(scores.device)
-                if rectifier.size(0) > 1:                       # class specific rectifier
-                    assert rectifier.size(0) == self.num_class
-                    rectifier = rectifier[labels]               # (H*W,)
+                if self.rectifier.size(0) > 1:           # class specific
+                    assert self.rectifier.size(0) == self.num_class
+                    rectifier = self.rectifier[labels]   # (H*W,)
+                else: rectifier = self.rectifier
 
                 scores = torch.pow(scores, 1 - rectifier) \
                        * torch.pow(iou_preds, rectifier)
@@ -328,7 +266,7 @@ class CenterHeadIoU(nn.Module):
         pred_dicts = self.generate_predicted_boxes(
             batch_size, pred_dicts
         )
-        scores = [pred_dicts[0]['pred_scores']]               # for aw format need
+        scores = [pred_dicts[0]['pred_scores'][0, i] for i in range(self.num_class)]               # for aw format need
         boxes = pred_dicts[0]['pred_boxes'].unsqueeze(0)      # (1, H*W, 7)
 
         return scores, boxes

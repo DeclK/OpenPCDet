@@ -55,6 +55,7 @@ class CenterHeadIoU(nn.Module):
         self.point_cloud_range = point_cloud_range
         self.voxel_size = voxel_size
         self.feature_map_stride = self.model_cfg.TARGET_ASSIGNER_CONFIG.get('FEATURE_MAP_STRIDE', None)
+        self.rectifier = torch.tensor(model_cfg.POST_PROCESSING.get('RECTIFIER', 0.0)).view(-1).cuda()
 
         self.class_names = class_names
         self.class_names_each_head = []
@@ -100,7 +101,6 @@ class CenterHeadIoU(nn.Module):
         self.add_module('hm_loss_func', loss_utils.FocalLossCenterNet())
         self.add_module('reg_loss_func', loss_utils.RegLossCenterNet())
         self.add_module('iou_loss_func', loss_utils.IouLoss())
-        self.add_module('iou_reg_loss_func', loss_utils.IouRegLoss())
 
     def assign_target_of_single_head(
             self, num_classes, gt_boxes, feature_map_size, feature_map_stride, num_max_objs=500,
@@ -261,9 +261,6 @@ class CenterHeadIoU(nn.Module):
                 voxel_size=self.voxel_size,
                 point_cloud_range=self.point_cloud_range)
             pred_boxes = torch.clamp(pred_boxes, min=-200., max=200.)   # avoid large number          
-            # iou_reg_loss = self.iou_reg_loss_func(pred_boxes, mask, ind, gt_boxes)
-            # iou_reg_loss *= self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['iou_reg_weight']
-            iou_reg_loss = 0
 
             # IoU prediction loss
             if pred_dict.get('iou', None) is not None:
@@ -273,8 +270,7 @@ class CenterHeadIoU(nn.Module):
                 tb_dict['iou_loss_%d' % idx] = iou_loss.item()
             else: iou_loss = 0
 
-            loss += hm_loss + loc_loss + iou_reg_loss + iou_loss
-            # tb_dict['iou_reg_loss_head_%d' % idx] = iou_reg_loss.item()
+            loss += hm_loss + loc_loss + iou_loss
             tb_dict['hm_loss_head_%d' % idx] = hm_loss.item()
             tb_dict['loc_loss_head_%d' % idx] = loc_loss.item()
 
@@ -312,11 +308,10 @@ class CenterHeadIoU(nn.Module):
                 iou_preds = batch_iou[i]
                 scores, labels = torch.max(hm_preds, dim=-1)
 
-                rectifier = post_process_cfg.get('RECTIFIER', 0.0)
-                rectifier = torch.tensor(rectifier).view(-1).to(scores.device)
-                if rectifier.size(0) > 1:   # class specific rectifier
-                    assert rectifier.size(0) == self.num_class
-                    rectifier = rectifier[labels]   # (H*W,)
+                if self.rectifier.size(0) > 1:           # class specific
+                    assert self.rectifier.size(0) == self.num_class
+                    rectifier = self.rectifier[labels]   # (H*W,)
+                else: rectifier = self.rectifier
 
                 scores = torch.pow(scores, 1 - rectifier) \
                        * torch.pow(iou_preds, rectifier)
