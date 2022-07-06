@@ -3,7 +3,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn.init import kaiming_normal_
-from pcdet.models.model_utils import centernet_utils
 
 from functools import partial
 norm_fn = partial(nn.BatchNorm2d, eps=1e-3, momentum=0.01)
@@ -191,23 +190,18 @@ class CenterHeadIoU(nn.Module):
             batch_hm = pred_dict['hm'].sigmoid().permute(0, 2, 3, 1).view(B, H*W, -1)
 
             if 'iou' in pred_dict.keys():
-                batch_iou = pred_dict['iou'].permute(0, 2, 3, 1).view(B, H*W)
+                batch_iou = pred_dict['iou'].permute(0, 2, 3, 1).view(B, H*W, -1)
                 batch_iou = (batch_iou + 1) * 0.5
-            else: batch_iou = torch.ones((B, H*W)).to(batch_hm.device)
+            else: batch_iou = torch.ones((B, H*W, 1)).to(batch_hm.device)
 
             for i in range(B):  # for each batch
                 box_preds = batch_box_preds[i]
                 hm_preds = batch_hm[i]
                 iou_preds = batch_iou[i]
-                scores, labels = torch.max(hm_preds, dim=-1)    # (H*W,)
+                scores, labels = torch.max(hm_preds, dim=-1)
 
-                if self.rectifier.size(0) > 1:           # class specific
-                    assert self.rectifier.size(0) == self.num_class
-                    rectifier = self.rectifier[labels]   # (H*W,)
-                else: rectifier = self.rectifier
-
-                scores = torch.pow(scores, 1 - rectifier) \
-                       * torch.pow(iou_preds, rectifier)
+                scores = torch.pow(hm_preds, 1 - self.rectifier) \
+                       * torch.pow(iou_preds, self.rectifier)
 
                 labels = self.class_id_mapping_each_head[idx][labels.long()]
 
@@ -266,7 +260,7 @@ class CenterHeadIoU(nn.Module):
         pred_dicts = self.generate_predicted_boxes(
             batch_size, pred_dicts
         )
-        scores = [pred_dicts[0]['pred_scores'][0, i] for i in range(self.num_class)]               # for aw format need
-        boxes = pred_dicts[0]['pred_boxes'].unsqueeze(0)      # (1, H*W, 7)
+        scores = [pred_dicts[0]['pred_scores']]                   # for aw format need
+        boxes = pred_dicts[0]['pred_boxes'].unsqueeze(0)            # (1, H*W, 7)
 
         return scores, boxes

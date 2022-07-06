@@ -30,7 +30,7 @@ MODEL:
         CLASS_AGNOSTIC: False
 
         CLASS_NAMES_EACH_HEAD: [
-            ['Car', 'Bus', 'Pedestrian', 'Cyclist']
+            ['Car'], ['Bus'], ['Pedestrian'], ['Cyclist']
         ]
 
         SHARED_CONV_CHANNEL: 64
@@ -55,7 +55,7 @@ MODEL:
         LOSS_CONFIG:
             LOSS_WEIGHTS: {
                 'cls_weight': 1.0,
-                'loc_weight': 2.0,
+                'loc_weight': 0.25,
                 'iou_weight': 1.0,
                 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
             }

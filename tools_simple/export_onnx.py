@@ -1,7 +1,7 @@
 import os
 
 cfg_file = '/home/chk/OpenPCDet/tools/cfgs/aw_models/centerpoint_iou.yaml'
-ckpt = '/home/chk/OpenPCDet/data/output_aw/aw_centerpoint_v1.1_iou/cfgs/aw_models/centerpoint_iou/default/ckpt/checkpoint_epoch_100.pth'
+ckpt = '/home/chk/OpenPCDet/output/cfgs/aw_models/centerpoint_iou/default/ckpt/checkpoint_epoch_80.pth'
 
 os.chdir('/home/chk/OpenPCDet/tools')
 

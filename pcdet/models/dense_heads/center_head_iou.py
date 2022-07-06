@@ -313,13 +313,13 @@ class CenterHeadIoU(nn.Module):
                     rectifier = self.rectifier[labels]   # (H*W,)
                 else: rectifier = self.rectifier
 
-                scores = torch.pow(scores, 1 - rectifier) \
-                       * torch.pow(iou_preds, rectifier)
-
                 score_mask = scores > post_process_cfg.SCORE_THRESH
                 distance_mask = (box_preds[..., :3] >= post_center_range[:3]).all(1) \
                               & (box_preds[..., :3] <= post_center_range[3:]).all(1)
                 mask = distance_mask & score_mask
+
+                scores = torch.pow(scores, 1 - rectifier) \
+                       * torch.pow(iou_preds, rectifier)
 
                 box_preds = box_preds[mask]
                 scores = scores[mask]

@@ -1,6 +1,6 @@
 import os
 
-CONFIG_FILE = './cfgs/aw_models/centerpoint_aux.yaml'
+CONFIG_FILE = './cfgs/aw_models/centerpoint_iou.yaml'
 CKPT = '/home/chk/OpenPCDet/data/output_aw/aw_centerpoint_aux_v1.0_half_repv2/cfgs/aw_models/centerpoint_aux/default/ckpt/checkpoint_epoch_80.pth'
 gpu_index = [5]
 sample_per_gpu = 4
