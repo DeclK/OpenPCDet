@@ -171,12 +171,22 @@ class CenterHeadIoU(nn.Module):
         return y
 
     def generate_predicted_boxes(self, batch_size, pred_dicts):
-        post_process_cfg = self.model_cfg.POST_PROCESSING
+        """
+        Generate dense boxes with iou rectified. And here we assume there is
+        only 1 batch.
+        Return a dict with heads results
+            - ret_scores: a list of score for each class (1, H*W, 1)
+            - ret_boxes: concated boxes (1, num_class*H*W, 7)
+        """
         ret_dict = [{
             'pred_boxes': [],
             'pred_scores': [],
             'pred_labels': [],
         } for i in range(batch_size)]
+        # switch class position
+        # trained with: [car, bus, cyclist, pedestrian]
+        # onnx format:  [car, bus, pedestrian, cyclist]
+        pred_dicts = [pred_dicts[0], pred_dicts[1], pred_dicts[3], pred_dicts[2]]
 
         for idx, pred_dict in enumerate(pred_dicts):           # for each head
             batch_box_preds = self.generate_dense_boxes(
@@ -190,9 +200,9 @@ class CenterHeadIoU(nn.Module):
             batch_hm = pred_dict['hm'].sigmoid().permute(0, 2, 3, 1).view(B, H*W, -1)
 
             if 'iou' in pred_dict.keys():
-                batch_iou = pred_dict['iou'].permute(0, 2, 3, 1).view(B, H*W, -1)
+                batch_iou = pred_dict['iou'].permute(0, 2, 3, 1).view(B, H*W)
                 batch_iou = (batch_iou + 1) * 0.5
-            else: batch_iou = torch.ones((B, H*W, 1)).to(batch_hm.device)
+            else: batch_iou = torch.ones((B, H*W)).to(batch_hm.device)
 
             for i in range(B):  # for each batch
                 box_preds = batch_box_preds[i]
@@ -200,21 +210,21 @@ class CenterHeadIoU(nn.Module):
                 iou_preds = batch_iou[i]
                 scores, labels = torch.max(hm_preds, dim=-1)
 
-                scores = torch.pow(hm_preds, 1 - self.rectifier) \
-                       * torch.pow(iou_preds, self.rectifier)
+                rectifier = self.rectifier[labels]   # (H*W,)
+                scores = torch.pow(scores, 1 - rectifier) \
+                       * torch.pow(iou_preds, rectifier)
+                scores = scores.view(1, -1, 1)      # ONNX format need, shape (1, N, 1)
 
                 labels = self.class_id_mapping_each_head[idx][labels.long()]
 
                 ret_dict[i]['pred_boxes'].append(box_preds)
                 ret_dict[i]['pred_scores'].append(scores)
                 ret_dict[i]['pred_labels'].append(labels)
+        
+        ret_scores = ret_dict[0]['pred_scores']
+        ret_boxes = torch.cat(ret_dict[0]['pred_boxes'], dim=0).view(1, -1, 7)
 
-        for i in range(batch_size): # concat head results
-            ret_dict[i]['pred_boxes'] = torch.cat(ret_dict[i]['pred_boxes'], dim=0)
-            ret_dict[i]['pred_scores'] = torch.cat(ret_dict[i]['pred_scores'], dim=0)
-            ret_dict[i]['pred_labels'] = torch.cat(ret_dict[i]['pred_labels'], dim=0) + 1
-
-        return ret_dict
+        return ret_scores, ret_boxes
 
     def generate_dense_boxes(self, pred_dict, feature_map_stride, voxel_size, point_cloud_range):
         """
@@ -257,10 +267,8 @@ class CenterHeadIoU(nn.Module):
         self.forward_ret_dict['pred_dicts'] = pred_dicts
 
         batch_size = x.size(0)
-        pred_dicts = self.generate_predicted_boxes(
+        scores, boxes = self.generate_predicted_boxes(
             batch_size, pred_dicts
         )
-        scores = [pred_dicts[0]['pred_scores']]                   # for aw format need
-        boxes = pred_dicts[0]['pred_boxes'].unsqueeze(0)            # (1, H*W, 7)
 
         return scores, boxes

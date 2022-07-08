@@ -103,7 +103,7 @@ def eval_one_epoch(cfg, model, dataloader, epoch_id, logger, dist_test=False, sa
 
         logger.info('recall_roi_%s: %f' % (cur_thresh, cur_roi_recall))
         logger.info('recall_rcnn_%s: %f' % (cur_thresh, cur_rcnn_recall))
-        logger.info('false_positive_%s: %f' % (cur_thresh, cur_rcnn_fp))
+        # logger.info('false_positive_%s: %f' % (cur_thresh, cur_rcnn_fp)) # CHK MARK, if need to see fp
         ret_dict['recall/roi_%s' % str(cur_thresh)] = cur_roi_recall
         ret_dict['recall/rcnn_%s' % str(cur_thresh)] = cur_rcnn_recall
 

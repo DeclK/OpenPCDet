@@ -1,9 +1,9 @@
 import os
 
 CONFIG_FILE = './cfgs/aw_models/centerpoint_iou.yaml'
-CKPT = '/home/chk/OpenPCDet/data/output_aw/aw_centerpoint_aux_v1.0_half_repv2/cfgs/aw_models/centerpoint_aux/default/ckpt/checkpoint_epoch_80.pth'
-gpu_index = [5]
-sample_per_gpu = 4
+CKPT = '/home/chk/OpenPCDet/data/output_aw/aw_centerpoint_v1.4_iou_debug_versions/cfgs/aw_models/centerpoint_iou/default/ckpt/checkpoint_epoch_80.pth'
+gpu_index = [3]
+sample_per_gpu = 1
 
 NUM_GPUS = len(gpu_index)
 BATCH_SIZE = NUM_GPUS * sample_per_gpu

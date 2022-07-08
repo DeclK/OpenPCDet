@@ -329,8 +329,8 @@ class CenterHeadIoU(nn.Module):
                 if post_process_cfg.NMS_CONFIG.NMS_NAME == 'agnostic_nms':
                     selected, selected_scores = \
                             model_nms_utils.class_agnostic_nms(
-                            box_scores=scores, box_preds=box_preds,
-                            nms_config=post_process_cfg.NMS_CONFIG,
+                                box_scores=scores, box_preds=box_preds,
+                                nms_config=post_process_cfg.NMS_CONFIG,
                     )
                     selected_boxes = box_preds[selected]
                     selected_labels = labels[selected]

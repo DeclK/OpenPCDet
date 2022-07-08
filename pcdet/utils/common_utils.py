@@ -281,6 +281,11 @@ class EasyPickle:
     """ Write open file scripts with pickle for quick load & dump """
     @staticmethod
     def load(file):
+        if not isinstance(file, Path):
+            file = Path(file)
+        if not file.exists():
+            print('File not exist, return None')
+            return
         with open(file, 'rb') as f:
             return pickle.load(f)
     @staticmethod

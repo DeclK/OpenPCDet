@@ -1,13 +1,13 @@
 import os
 
-cfg_file = '/home/chk/OpenPCDet/tools/cfgs/aw_models/centerpoint_iou.yaml'
-ckpt = '/home/chk/OpenPCDet/output/cfgs/aw_models/centerpoint_iou/default/ckpt/checkpoint_epoch_80.pth'
+cfg_file = ''
+ckpt = ''
 
 os.chdir('/home/chk/OpenPCDet/tools')
 
-# os.system(f'python onnx_utils/trans_pfe.py \
-#             --cfg_file {cfg_file} \
-#             --ckpt {ckpt}')
+os.system(f'python onnx_utils/trans_pfe.py \
+            --cfg_file {cfg_file} \
+            --ckpt {ckpt}')
 
 os.system(f'python onnx_utils/trans_backbone.py \
             --cfg_file {cfg_file} \

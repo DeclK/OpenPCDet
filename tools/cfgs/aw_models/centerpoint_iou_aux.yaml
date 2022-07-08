@@ -2,17 +2,9 @@ CLASS_NAMES: ['Car', 'Bus', 'Pedestrian', 'Cyclist']
 
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/aw_dataset.yaml
-    DATA_PROCESSOR:
-        -   NAME: transform_points_to_voxels
-            VOXEL_SIZE: [0.2, 0.2, 8.0]
-            MAX_POINTS_PER_VOXEL: 20
-            MAX_NUMBER_OF_VOXELS: {
-                'train': 30000,
-                'test': 60000
-            }
 
 MODEL:
-    NAME: CenterPoint
+    NAME: CenterPointAux
 
     VFE:
         NAME: PillarVFE
@@ -26,7 +18,7 @@ MODEL:
         NUM_BEV_FEATURES: 64
 
     BACKBONE_2D:
-        NAME: SCBEVBackbone
+        NAME: BaseBEVBackbone
         LAYER_NUMS: [3, 5, 5]
         LAYER_STRIDES: [2, 2, 2]
         NUM_FILTERS: [64, 128, 256]
@@ -34,7 +26,7 @@ MODEL:
         NUM_UPSAMPLE_FILTERS: [128, 128, 128]
 
     DENSE_HEAD:
-        NAME: CenterHead
+        NAME: CenterHeadAux
         CLASS_AGNOSTIC: False
 
         CLASS_NAMES_EACH_HEAD: [
@@ -51,6 +43,7 @@ MODEL:
                 'center_z': {'out_channels': 1, 'num_conv': 2},
                 'dim': {'out_channels': 3, 'num_conv': 2},
                 'rot': {'out_channels': 2, 'num_conv': 2},
+                'iou': {'out_channels': 1, 'num_conv': 2},
             }
 
         TARGET_ASSIGNER_CONFIG:
@@ -59,10 +52,32 @@ MODEL:
             GAUSSIAN_OVERLAP: 0.1
             MIN_RADIUS: 2
 
+        CGAM: # corner-guided auxiliary module
+            CORNER_TYPES: ['LT', 'RT', 'RD', 'LD']
+            SHARED_CONV_CHANNEL: 64
+
+            HEAD_DICT: {
+                'hm':{'num_conv': 2},
+                'corner': {'num_conv': 2},
+            }
+            HM_NORMALIZATION: True
+            TARGET_ASSIGNER_CONFIG:
+                FEATURE_MAP_STRIDE: 4
+                GAUSSIAN_OVERLAP: 0.1
+                MIN_RADIUS: 2
+            
+            LOSS_CONFIG:
+              LOSS_WEIGHTS: {
+                  'cls_weight': 1.0,
+                  'loc_weight': 2.0,
+                  'code_weights': [1.0, 1.0]
+              }
+
         LOSS_CONFIG:
             LOSS_WEIGHTS: {
                 'cls_weight': 1.0,
                 'loc_weight': 2.0,
+                'iou_weight': 1.0,
                 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
             }
 
@@ -70,9 +85,11 @@ MODEL:
             SCORE_THRESH: 0.1
             POST_CENTER_LIMIT_RANGE: [-61.2, -61.2, -10.0, 61.2, 61.2, 10.0]
             MAX_OBJ_PER_SAMPLE: 500
+            RECTIFIER: [0.7, 0.67, 0.53, 0.65]
             NMS_CONFIG:
+                NMS_NAME: class_specific_nms
                 NMS_TYPE: nms_gpu
-                NMS_THRESH: 0.7
+                NMS_THRESH: 0.01
                 NMS_PRE_MAXSIZE: 500
                 NMS_POST_MAXSIZE: 80
 

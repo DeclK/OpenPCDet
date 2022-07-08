@@ -1,7 +1,7 @@
 import os
 
-CONFIG_FILE = './cfgs/once_models/centerpoint.yaml'
-gpu_index = [2,3]
+CONFIG_FILE = './cfgs/aw_models/centerpoint_sc.yaml'
+gpu_index = [5,6]
 sample_per_gpu = 8
 CKPT_CHEK_INTERVAL = 1
 

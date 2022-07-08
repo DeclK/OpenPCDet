@@ -103,7 +103,7 @@ MODEL:
 
             HEAD_DICT: {
                 'hm':{'num_conv': 2},
-                'corner': {'out_channels': 2, 'num_conv': 2},
+                'corner': {'num_conv': 2},
             }
             HM_NORMALIZATION: True
             TARGET_ASSIGNER_CONFIG:
@@ -113,8 +113,8 @@ MODEL:
             
             LOSS_CONFIG:
               LOSS_WEIGHTS: {
-                  'cls_weight': 0.25,    # consider 0.25
-                  'loc_weight': 0.25,    # consider 0.5
+                  'cls_weight': 0.25,
+                  'loc_weight': 0.25,
                   'code_weights': [1.0, 1.0]
               }
 

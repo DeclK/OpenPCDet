@@ -1,7 +1,7 @@
 import os
 
 CONFIG_FILE = './cfgs/aw_models/centerpoint_iou.yaml'
-gpu_index = [0,1,3]
+gpu_index = [2,3,4]
 samples_per_gpu = 4
 
 NUM_GPUS = len(gpu_index)
@@ -9,7 +9,7 @@ BATCH_SIZE = NUM_GPUS * samples_per_gpu
 CUDA_INDEX = ','.join(map(str, gpu_index))
 
 # Given ckpt dir
-CKPT_DIR = '/home/chk/OpenPCDet/output/cfgs/aw_models/centerpoint_iou/default/ckpt'
+CKPT_DIR = '/home/chk/OpenPCDet/output/cfgs/aw_models/centerpoint_iou_aux/default/ckpt'
 START_EPOCH = 78
 
 os.chdir('/home/chk/OpenPCDet/tools')

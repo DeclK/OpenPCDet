@@ -59,8 +59,7 @@ def get_evaluation_results(gt_annos,
 
     num_samples = len(gt_annos)
     split_parts = compute_split_parts(num_samples, num_parts)
-  #  print("gt_annos:", gt_annos)
-  #  print("pred_annos:", pred_annos)
+    ## a list of ious [(num_gt, num_pred) for num_samples]
     ious = compute_iou3d(gt_annos,
                          pred_annos,
                          split_parts,
@@ -299,6 +298,9 @@ def get_evaluation_pr_results(gt_annos,
 
 @numba.jit(nopython=True)
 def get_thresholds(scores, num_gt, num_pr_points):
+    """
+    Calculate score thresholds at different recall points
+    """
     eps = 1e-6
     scores.sort()
     scores = scores[::-1]
@@ -324,6 +326,10 @@ def get_thresholds(scores, num_gt, num_pr_points):
 
 @numba.jit(nopython=True)
 def accumulate_scores(iou, pred_scores, gt_flag, pred_flag, iou_threshold):
+    """
+    Calculate recalled gt boxes, and return their scores (N,)
+    Not matched gt boxes are scored as zero
+    """
     num_gt = iou.shape[0]
     num_pred = iou.shape[1]
     assigned = np.full(num_pred, False)
