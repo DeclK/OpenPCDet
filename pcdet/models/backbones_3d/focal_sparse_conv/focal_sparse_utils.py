@@ -103,38 +103,40 @@ def split_voxels(x, b, imps_3d, voxels_3d, kernel_offsets, mask_multi=True, topk
     batch_index = index==b
     indices_ori = x.indices[batch_index]
     features_ori = x.features[batch_index]
-    mask_voxel = imps_3d[batch_index, -1].sigmoid()
-    mask_kernel = imps_3d[batch_index, :-1].sigmoid()
+    mask_voxel = imps_3d[batch_index, -1].sigmoid()     # last voxel, center voxel
+    mask_kernel = imps_3d[batch_index, :-1].sigmoid()   # except last voxel, scores
 
-    if mask_multi:
-        features_ori *= mask_voxel.unsqueeze(-1)
-
-    if topk:
+    if topk:    # here threshold is the kept portion, choose top portion voxel
         _, indices = mask_voxel.sort(descending=True)
         indices_fore = indices[:int(mask_voxel.shape[0]*threshold)]
         indices_back = indices[int(mask_voxel.shape[0]*threshold):]
-    else:
+    else:       # here threshold is the score thresh
         indices_fore = mask_voxel > threshold
         indices_back = mask_voxel <= threshold
 
-    features_fore = features_ori[indices_fore]
+    features_fore = features_ori[indices_fore]  # get fg features & indices
     coords_fore = indices_ori[indices_fore]
 
-    mask_kernel_fore = mask_kernel[indices_fore]
-    mask_kernel_bool = mask_kernel_fore>=threshold
-    voxel_kerels_imp = kernel_offsets.unsqueeze(0).repeat(mask_kernel_bool.shape[0],1, 1)
-    mask_kernel_fore = mask_kernel[indices_fore][mask_kernel_bool]
-    indices_fore_kernels = coords_fore[:, 1:].unsqueeze(1).repeat(1, kernel_offsets.shape[0], 1)
-    indices_with_imp = indices_fore_kernels + voxel_kerels_imp
-    selected_indices = indices_with_imp[mask_kernel_bool]
+    mask_kernel_fore = mask_kernel[indices_fore]    # fg kernel (N_fg, 26)
+    mask_kernel_bool = mask_kernel_fore>=threshold  # fg kernel and > thresh mask (N_fg, 26)
+    voxel_kerels_imp = \
+        kernel_offsets.unsqueeze(0).repeat(mask_kernel_bool.shape[0],1, 1)   # (N_fg, 26, 3) temptlate
+    mask_kernel_fore = mask_kernel[indices_fore][mask_kernel_bool]  # (M,)  topk and > thresh mask kernel scores
+    indices_fore_kernels = \
+        coords_fore[:, 1:].unsqueeze(1).repeat(1, kernel_offsets.shape[0], 1)    # (N_fg, 26, 3), fg kernel center coord
+    indices_with_imp = indices_fore_kernels + voxel_kerels_imp  # fg kernel with offset
+    selected_indices = indices_with_imp[mask_kernel_bool]       # fg kernel important coords
+                                                                # (M, 3)
     spatial_indices = (selected_indices[:, 0] >0) * (selected_indices[:, 1] >0) * (selected_indices[:, 2] >0)  * \
                         (selected_indices[:, 0] < x.spatial_shape[0]) * (selected_indices[:, 1] < x.spatial_shape[1]) * (selected_indices[:, 2] < x.spatial_shape[2])
+    # filter out outside range kernerl                        
     selected_indices = selected_indices[spatial_indices]
     mask_kernel_fore = mask_kernel_fore[spatial_indices]
+    # add batch index
     selected_indices = torch.cat([torch.ones((selected_indices.shape[0], 1), device=features_fore.device)*b, selected_indices], dim=1)
 
+    # full fg == center + other kernel positions
     selected_features = torch.zeros((selected_indices.shape[0], features_ori.shape[1]), device=features_fore.device)
-
     features_fore_cat = torch.cat([features_fore, selected_features], dim=0)
     coords_fore = torch.cat([coords_fore, selected_indices], dim=0)
     mask_kernel_fore = torch.cat([torch.ones(features_fore.shape[0], device=features_fore.device), mask_kernel_fore], dim=0)

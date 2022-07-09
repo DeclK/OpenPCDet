@@ -58,45 +58,6 @@ def post_act_block(in_channels, out_channels, kernel_size, indice_key=None, stri
     return m
 
 
-class SparseBasicBlock(spconv.SparseModule):
-    expansion = 1
-
-    def __init__(self, inplanes, planes, stride=1, norm_fn=None, downsample=None, indice_key=None):
-        super(SparseBasicBlock, self).__init__()
-
-        assert norm_fn is not None
-        bias = norm_fn is not None
-        self.conv1 = spconv.SubMConv3d(
-            inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=bias, indice_key=indice_key
-        )
-        self.bn1 = norm_fn(planes)
-        self.relu = nn.ReLU(True)
-        self.conv2 = spconv.SubMConv3d(
-            planes, planes, kernel_size=3, stride=stride, padding=1, bias=bias, indice_key=indice_key
-        )
-        self.bn2 = norm_fn(planes)
-        self.downsample = downsample
-        self.stride = stride
-
-    def forward(self, x):
-        identity = x
-
-        out = self.conv1(x)
-        out = out.replace_feature(self.bn1(out.features))
-        out = out.replace_feature(self.relu(out.features))
-
-        out = self.conv2(out)
-        out = out.replace_feature(self.bn2(out.features))
-
-        if self.downsample is not None:
-            identity = self.downsample(x)
-
-        out = out.replace_feature(out.features + identity.features)
-        out = out.replace_feature(self.relu(out.features))
-
-        return out
-
-
 class VoxelBackBone8xFocal(nn.Module):
     def __init__(self, model_cfg, input_channels, grid_size, **kwargs):
         super().__init__()
@@ -133,7 +94,7 @@ class VoxelBackBone8xFocal(nn.Module):
             special_spconv_fn(16, 16, voxel_stride=1, norm_fn=norm_fn, indice_key='focal1'),
         )
 
-        self.conv2 =SparseSequentialBatchdict(
+        self.conv2 = SparseSequentialBatchdict(
             # [1600, 1408, 41] <- [800, 704, 21]
             block(16, 32, 3, norm_fn=norm_fn, stride=2, padding=1, indice_key='spconv2', conv_type='spconv'),
             block(32, 32, 3, norm_fn=norm_fn, padding=1, indice_key='subm2'),

@@ -29,88 +29,23 @@ class FocalSparseConv(spconv.SparseModule):
         self.skip_mask_kernel = skip_mask_kernel
         self.use_img = use_img
 
-        voxel_channel = enlarge_voxel_channels if enlarge_voxel_channels>0 else inplanes
+        voxel_channel = inplanes
         in_channels = image_channel + voxel_channel if use_img else voxel_channel
 
-        self.conv_enlarge = spconv.SparseSequential(spconv.SubMConv3d(inplanes, enlarge_voxel_channels, 
-            kernel_size=3, stride=1, padding=1, bias=False, indice_key=indice_key+'_enlarge'),
-            norm_fn(enlarge_voxel_channels),
-            nn.ReLU(True)) if enlarge_voxel_channels>0 else None
+        self.conv_enlarge = None
 
         self.conv_imp = spconv.SubMConv3d(in_channels, offset_channels, kernel_size=3, stride=1, padding=1, bias=False, indice_key=indice_key+'_imp')
 
         _step = int(kernel_size//2)
-        kernel_offsets = [[i, j, k] for i in range(-_step, _step+1) for j in range(-_step, _step+1) for k in range(-_step, _step+1)]
+        kernel_offsets = [[i, j, k] for i in range(-_step, _step+1) 
+                                    for j in range(-_step, _step+1) 
+                                    for k in range(-_step, _step+1)]
         kernel_offsets.remove([0, 0, 0])
-        self.kernel_offsets = torch.Tensor(kernel_offsets).cuda()
+        self.kernel_offsets = torch.Tensor(kernel_offsets).cuda()   # (26, 3)
         self.inv_idx =  torch.Tensor([2, 1, 0]).long().cuda()
         self.point_cloud_range = torch.Tensor(point_cloud_range).cuda()
         self.voxel_size = torch.Tensor(voxel_size).cuda()
 
-    def construct_multimodal_features(self, x, x_rgb, batch_dict, fuse_sum=False):
-        """
-            Construct the multimodal features with both lidar sparse features and image features.
-            Args:
-                x: [N, C] lidar sparse features
-                x_rgb: [b, c, h, w] image features
-                batch_dict: input and output information during forward
-                fuse_sum: bool, manner for fusion, True - sum, False - concat
-
-            Return:
-                image_with_voxelfeatures: [N, C] fused multimodal features
-        """
-        batch_index = x.indices[:, 0]
-        spatial_indices = x.indices[:, 1:] * self.voxel_stride
-        voxels_3d = spatial_indices * self.voxel_size + self.point_cloud_range[:3]
-        calibs = batch_dict['calib']
-        batch_size = batch_dict['batch_size']
-        h, w = batch_dict['images'].shape[2:]
-
-        if not x_rgb.shape == batch_dict['images'].shape:
-            x_rgb = nn.functional.interpolate(x_rgb, (h, w), mode='bilinear')
-
-        image_with_voxelfeatures = []
-        voxels_2d_int_list = []
-        filter_idx_list = []
-        for b in range(batch_size):
-            x_rgb_batch = x_rgb[b]
-
-            calib = calibs[b]
-            voxels_3d_batch = voxels_3d[batch_index==b]
-            voxel_features_sparse = x.features[batch_index==b]
-
-            # Reverse the point cloud transformations to the original coords.
-            if 'noise_scale' in batch_dict:
-                voxels_3d_batch[:, :3] /= batch_dict['noise_scale'][b]
-            if 'noise_rot' in batch_dict:
-                voxels_3d_batch = common_utils.rotate_points_along_z(voxels_3d_batch[:, self.inv_idx].unsqueeze(0), -batch_dict['noise_rot'][b].unsqueeze(0))[0, :, self.inv_idx]
-            if 'flip_x' in batch_dict:
-                voxels_3d_batch[:, 1] *= -1 if batch_dict['flip_x'][b] else 1
-            if 'flip_y' in batch_dict:
-                voxels_3d_batch[:, 2] *= -1 if batch_dict['flip_y'][b] else 1
-
-            voxels_2d, _ = calib.lidar_to_img(voxels_3d_batch[:, self.inv_idx].cpu().numpy())
-
-            voxels_2d_int = torch.Tensor(voxels_2d).to(x_rgb_batch.device).long()
-
-            filter_idx = (0<=voxels_2d_int[:, 1]) * (voxels_2d_int[:, 1] < h) * (0<=voxels_2d_int[:, 0]) * (voxels_2d_int[:, 0] < w)
-
-            filter_idx_list.append(filter_idx)
-            voxels_2d_int = voxels_2d_int[filter_idx]
-            voxels_2d_int_list.append(voxels_2d_int)
-
-            image_features_batch = torch.zeros((voxel_features_sparse.shape[0], x_rgb_batch.shape[0]), device=x_rgb_batch.device)
-            image_features_batch[filter_idx] = x_rgb_batch[:, voxels_2d_int[:, 1], voxels_2d_int[:, 0]].permute(1, 0)
-
-            if fuse_sum:
-                image_with_voxelfeature = image_features_batch + voxel_features_sparse
-            else:
-                image_with_voxelfeature = torch.cat([image_features_batch, voxel_features_sparse], dim=1)
-
-            image_with_voxelfeatures.append(image_with_voxelfeature)
-
-        image_with_voxelfeatures = torch.cat(image_with_voxelfeatures)
-        return image_with_voxelfeatures
 
     def _gen_sparse_features(self, x, imps_3d, batch_dict, voxels_3d):
         """
@@ -135,14 +70,17 @@ class FocalSparseConv(spconv.SparseModule):
             if self.training:
                 index = x.indices[:, 0]
                 batch_index = index==b
-                mask_voxel = imps_3d[batch_index, -1].sigmoid()
-                voxels_3d_batch = voxels_3d[batch_index].unsqueeze(0)
+                mask_voxel = imps_3d[batch_index, -1].sigmoid() # center voxel score
+                voxels_3d_batch = voxels_3d[batch_index].unsqueeze(0)   # (1, Ni, 3)
                 mask_voxels.append(mask_voxel)
                 gt_boxes = batch_dict['gt_boxes'][b, :, :-1].unsqueeze(0)
                 box_of_pts_batch = points_in_boxes_gpu(voxels_3d_batch[:, :, self.inv_idx], gt_boxes).squeeze(0)
-                box_of_pts_cls_targets.append(box_of_pts_batch>=0)
+                box_of_pts_cls_targets.append(box_of_pts_batch>=0)  # fg/bg voxel targets
 
-            features_fore, indices_fore, features_back, indices_back, mask_kernel = split_voxels(x, b, imps_3d, voxels_3d, self.kernel_offsets, mask_multi=self.mask_multi, topk=self.topk, threshold=self.threshold)
+            features_fore, indices_fore, features_back, indices_back, mask_kernel = \
+                split_voxels(x, b, imps_3d, voxels_3d, self.kernel_offsets, 
+                             mask_multi=self.mask_multi, topk=self.topk,    # mask_multi is false, topk is true
+                             threshold=self.threshold)                      # self.threshold is 0.5
 
             mask_kernel_list.append(mask_kernel)
             voxel_features_fore.append(features_fore)
@@ -156,6 +94,7 @@ class FocalSparseConv(spconv.SparseModule):
         voxel_indices_back = torch.cat(voxel_indices_back, dim=0)
         mask_kernel = torch.cat(mask_kernel_list, dim=0)
 
+        # rebuild sparse tensor
         x_fore = spconv.SparseConvTensor(voxel_features_fore, voxel_indices_fore, x.spatial_shape, x.batch_size)
         x_back = spconv.SparseConvTensor(voxel_features_back, voxel_indices_back, x.spatial_shape, x.batch_size)
 
@@ -200,13 +139,9 @@ class FocalSparseConv(spconv.SparseModule):
         spatial_indices = x.indices[:, 1:] * self.voxel_stride
         voxels_3d = spatial_indices * self.voxel_size + self.point_cloud_range[:3]
 
-        if self.use_img:
-            features_multimodal = self.construct_multimodal_features(x, x_rgb, batch_dict)
-            x_predict = spconv.SparseConvTensor(features_multimodal, x.indices, x.spatial_shape, x.batch_size)
-        else:
-            x_predict = self.conv_enlarge(x) if self.conv_enlarge else x
+        x_predict = x
 
-        imps_3d = self.conv_imp(x_predict).features
+        imps_3d = self.conv_imp(x_predict).features # (N, 27)
 
         x_fore, x_back, loss_box_of_pts, mask_kernel = self._gen_sparse_features(x, imps_3d, batch_dict, voxels_3d)
 
@@ -214,9 +149,6 @@ class FocalSparseConv(spconv.SparseModule):
             x_fore = x_fore.replace_feature(x_fore.features * mask_kernel.unsqueeze(-1))
         out = self.combine_out(x_fore, x_back, remove_repeat=True)
         out = self.conv(out)
-
-        if self.use_img:
-            out = out.replace_feature(self.construct_multimodal_features(out, x_rgb, batch_dict, True))
 
         out = out.replace_feature(self.bn1(out.features))
         out = out.replace_feature(self.relu(out.features))
