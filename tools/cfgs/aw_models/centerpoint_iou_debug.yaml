@@ -1,4 +1,4 @@
-CLASS_NAMES: ['Car', 'Bus', 'Pedestrian', 'Cyclist']
+CLASS_NAMES: ['Car', 'Bus', 'Cyclist', 'Pedestrian']
 
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/aw_dataset.yaml
@@ -30,7 +30,7 @@ MODEL:
         CLASS_AGNOSTIC: False
 
         CLASS_NAMES_EACH_HEAD: [
-            ['Car', 'Bus', 'Pedestrian', 'Cyclist']
+            ['Car', 'Bus', 'Cyclist', 'Pedestrian']
         ]
 
         SHARED_CONV_CHANNEL: 64

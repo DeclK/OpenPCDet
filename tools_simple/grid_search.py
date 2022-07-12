@@ -15,16 +15,16 @@ import re
 
 grid = np.round(np.linspace(0.4, 0.8, num=41), 2)
 grid = grid.tolist()
-config_file = Path('/home/chk/OpenPCDet/tools/cfgs/aw_models/centerpoint_iou.yaml')
+config_file = Path('')
 
-CKPT = '/home/chk/OpenPCDet/data/output_aw/aw_centerpoint_v1.1_iou/cfgs/aw_models/centerpoint_iou/default/ckpt/checkpoint_epoch_100.pth'
+CKPT = ''
 gpu_index = [0, 1, 2, 3]
 sample_per_gpu = 4
 NUM_GPUS = len(gpu_index)
 BATCH_SIZE = NUM_GPUS * sample_per_gpu
 CUDA_INDEX = ','.join(map(str, gpu_index))
 
-os.chdir('/home/chk/OpenPCDet/tools')
+os.chdir('')
 # modify config
 for value in grid:
     content = config_file.read_text()
@@ -44,7 +44,7 @@ for value in grid:
 
 # from pathlib import Path
 # import re
-# dir = '/home/chk/OpenPCDet/output/home/chk/OpenPCDet/tools/cfgs/aw_models/centerpoint_iou/default/eval/epoch_100/test/default'
+# dir = ''
 # dir = Path(dir)
 # for f in dir.iterdir():
 #     str = f.read_text()

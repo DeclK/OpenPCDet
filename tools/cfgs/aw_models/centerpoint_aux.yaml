@@ -1,4 +1,4 @@
-CLASS_NAMES: ['Car', 'Bus', 'Pedestrian', 'Cyclist']
+CLASS_NAMES: ['Car', 'Bus', 'Cyclist', 'Pedestrian']
 
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/aw_dataset.yaml
@@ -22,7 +22,7 @@ MODEL:
         LAYER_NUMS: [3, 5, 5]
         LAYER_STRIDES: [2, 2, 2]
         NUM_FILTERS: [64, 128, 256]
-        UPSAMPLE_STRIDES: [0.5, 1, 2] # why 0.5?
+        UPSAMPLE_STRIDES: [0.5, 1, 2]
         NUM_UPSAMPLE_FILTERS: [128, 128, 128]
 
     DENSE_HEAD:
@@ -30,7 +30,7 @@ MODEL:
         CLASS_AGNOSTIC: False
 
         CLASS_NAMES_EACH_HEAD: [
-            ['Car', 'Bus', 'Pedestrian', 'Cyclist']
+            ['Car', 'Bus', 'Cyclist', 'Pedestrian']
         ]
 
         SHARED_CONV_CHANNEL: 64

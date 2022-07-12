@@ -173,7 +173,7 @@ class CenterHeadIoU(nn.Module):
     def generate_predicted_boxes(self, batch_size, pred_dicts):
         """
         Generate dense boxes with iou rectified. And here we assume there is
-        only 1 batch.
+        only 1 batch, classes must be ordered in: [car, bus, cyclist, pedestrian]
         Return a dict with heads results
             - ret_scores: a list of score for each class (1, H*W, 1)
             - ret_boxes: concated boxes (1, num_class*H*W, 7)
@@ -183,10 +183,6 @@ class CenterHeadIoU(nn.Module):
             'pred_scores': [],
             'pred_labels': [],
         } for i in range(batch_size)]
-        # switch class position
-        # trained with: [car, bus, cyclist, pedestrian]
-        # onnx format:  [car, bus, pedestrian, cyclist]
-        pred_dicts = [pred_dicts[0], pred_dicts[1], pred_dicts[3], pred_dicts[2]]
 
         for idx, pred_dict in enumerate(pred_dicts):           # for each head
             batch_box_preds = self.generate_dense_boxes(
@@ -226,6 +222,17 @@ class CenterHeadIoU(nn.Module):
 
         return ret_scores, ret_boxes
 
+    def my_atan2(self, y, x):
+        pi = torch.from_numpy(np.array([np.pi])).to("cuda:0",dtype=torch.float32)
+        ans = torch.atan(y / x)
+        ans += ((y > 0) & (x < 0)) * pi
+        ans -= ((y < 0) & (x < 0)) * pi
+        ans *= (1 - ((y > 0) & (x == 0)) * 1.0)
+        ans += ((y > 0) & (x == 0)) * (pi / 2)
+        ans *= (1 - ((y < 0) & (x == 0)) * 1.0)
+        ans += ((y < 0) & (x == 0)) * (-pi / 2)
+        return ans
+
     def generate_dense_boxes(self, pred_dict, feature_map_stride, voxel_size, point_cloud_range):
         """
         Generate boxes for single sample pixel-wise
@@ -243,7 +250,7 @@ class CenterHeadIoU(nn.Module):
         batch_rot_cos = pred_dict['rot'][:, 0].unsqueeze(dim=1)
         batch_rot_sin = pred_dict['rot'][:, 1].unsqueeze(dim=1)
         # batch_rot = torch.atan2(batch_rot_sin, batch_rot_cos)
-        batch_rot = torch.atan(batch_rot_sin / (batch_rot_cos + 1e-6))  # ONNX doesn't support atan2
+        batch_rot = self.my_atan2(batch_rot_sin, batch_rot_cos)  # ONNX doesn't support atan2
 
         B, _, H, W = batch_dim.size()
         ys, xs = torch.meshgrid([torch.arange(0, H), torch.arange(0, W)])

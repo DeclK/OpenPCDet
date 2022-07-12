@@ -1,7 +1,7 @@
 import os
 
-CONFIG_FILE = './cfgs/aw_models/centerpoint_iou.yaml'
-gpu_index = [2,3,4]
+CONFIG_FILE = ''
+gpu_index = []
 samples_per_gpu = 4
 
 NUM_GPUS = len(gpu_index)
@@ -9,25 +9,25 @@ BATCH_SIZE = NUM_GPUS * samples_per_gpu
 CUDA_INDEX = ','.join(map(str, gpu_index))
 
 # Given ckpt dir
-CKPT_DIR = '/home/chk/OpenPCDet/output/cfgs/aw_models/centerpoint_iou_aux/default/ckpt'
-START_EPOCH = 78
+# CKPT_DIR = ''
+# START_EPOCH = 158
 
-os.chdir('/home/chk/OpenPCDet/tools')
-os.system(f"export CUDA_VISIBLE_DEVICES='{CUDA_INDEX}' && \
-            bash scripts/dist_test.sh {NUM_GPUS}          \
-            --cfg_file {CONFIG_FILE}    \
-            --batch_size {BATCH_SIZE}   \
-            --start_epoch {START_EPOCH} \
-            --ckpt_dir {CKPT_DIR}       \
-            --eval_all")
-
-# Given ckpt file
-
-# CKPT = '/home/chk/OpenPCDet/data/output_aw/aw_centerpoint_v1.1_iou/cfgs/aw_models/centerpoint_iou/default/ckpt/checkpoint_epoch_100.pth'
-# os.chdir('/home/chk/OpenPCDet/tools')
+# os.chdir('')
 # os.system(f"export CUDA_VISIBLE_DEVICES='{CUDA_INDEX}' && \
 #             bash scripts/dist_test.sh {NUM_GPUS}          \
 #             --cfg_file {CONFIG_FILE}    \
 #             --batch_size {BATCH_SIZE}   \
-#             --ckpt {CKPT}"
-#             )
+#             --start_epoch {START_EPOCH} \
+#             --ckpt_dir {CKPT_DIR}       \
+#             --eval_all")
+
+# Given ckpt file
+
+CKPT = ''
+os.chdir('')
+os.system(f"export CUDA_VISIBLE_DEVICES='{CUDA_INDEX}' && \
+            bash scripts/dist_test.sh {NUM_GPUS}          \
+            --cfg_file {CONFIG_FILE}    \
+            --batch_size {BATCH_SIZE}   \
+            --ckpt {CKPT}"
+            )

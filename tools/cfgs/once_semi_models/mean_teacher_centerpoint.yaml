@@ -64,7 +64,7 @@ OPTIMIZATION:
 
         FILTER_BOXES: False
 
-        CONSISTENCY_WEIGHT: 1 # 10
+        CONSISTENCY_WEIGHT: 8 # 10
         CENTER_WEIGHT: 0
         SIZE_WEIGHT: 0
         CLASS_WEIGHT: 2
@@ -107,7 +107,7 @@ MODEL:
         NUM_BEV_FEATURES: 256
 
     BACKBONE_2D:
-        NAME: BaseBEVBackbone
+        NAME: BaseBEVBackbonePCDet
 
         LAYER_NUMS: [5, 5]
         LAYER_STRIDES: [1, 2]

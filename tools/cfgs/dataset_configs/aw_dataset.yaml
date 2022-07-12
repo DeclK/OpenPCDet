@@ -6,7 +6,7 @@ POINT_CLOUD_RANGE: [-60.8, -60.8, -5.0, 60.8, 60.8, 3.0]
 INFO_PATH: {
     'train': [aw_infos_train.pkl],
     # 'val': [aw_infos_val.pkl],
-    'test': [aw_infos_test.pkl],  # adjust here to eval val/test split
+    'test': [aw_infos_val.pkl],  # adjust here to eval val/test split
 }
 
 DATA_SPLIT: {

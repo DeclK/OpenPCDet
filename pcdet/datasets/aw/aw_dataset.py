@@ -207,6 +207,11 @@ class AwDataset(DatasetTemplate):
             eval_gt_annos[i]["name"] = eval_gt_annos[i]["name"][select]
             eval_gt_annos[i]["num_points_in_gt"] = eval_gt_annos[i]["num_points_in_gt"][select]
             #print("gt_boxes after: ", eval_gt_annos[i]["boxes_3d"])
+        ######## For Evaluation Update, Save Inference Dict
+        # from pcdet.utils.common_utils import EasyPickle
+        # d = {'pred': eval_det_annos, 'gt':eval_gt_annos}
+        # file = '/home/chk/OpenPCDet/result_test_origin.pkl'
+        # EasyPickle.dump(d, file)
         ap_result_str, ap_dict = get_evaluation_results(
             eval_gt_annos, eval_det_annos, class_names)
 
@@ -521,14 +526,17 @@ class AwDataset(DatasetTemplate):
         return data_dict
 
 
-def create_aw_infos(dataset_cfg, class_names, data_path, save_path, workers=4):
+def create_aw_infos(dataset_cfg, class_names, data_path, save_path, workers=4, split=None):
     dataset = AwDataset(dataset_cfg=dataset_cfg,
                         class_names=class_names,
                         root_path=data_path,
                         training=False)
 
-    splits = ['train', 'val', 'test']
-    #ignore = ['test']
+    if split is not None:
+        assert split in ['test', 'train', 'val']
+        splits = [split]
+    else:
+        splits = ['test', 'train', 'val']
 
     print('---------------Start to generate data infos---------------')
     for split in splits:
@@ -566,6 +574,7 @@ if __name__ == '__main__':
                         help='specify the config of dataset')
     parser.add_argument('--func', type=str, default='create_aw_infos', help='')
     parser.add_argument('--path', type=str, default=None, help='')
+    parser.add_argument('--split', type=str, default=None, help='which split to process. if not set, all train/val/test will be processed')
     args = parser.parse_args()
 
     if args.func == 'create_aw_infos':
@@ -585,4 +594,5 @@ if __name__ == '__main__':
         create_aw_infos(dataset_cfg=dataset_cfg,
                         class_names=['Car', 'Bus', 'Cyclist', 'Pedestrian'], #, 'Cyclist', 'Pedestrian'
                         data_path=aw_data_path,
-                        save_path=aw_save_path)
+                        save_path=aw_save_path,
+                        split=args.split)

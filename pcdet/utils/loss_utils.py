@@ -400,7 +400,7 @@ class IouLoss(nn.Module):
 
   def forward(self, iou_pred, mask, ind, box_pred, box_gt):
     if mask.sum() == 0:
-      return iou_pred.new_zeros((1))
+        return 0
     mask = mask.bool()
     pred = _transpose_and_gather_feat(iou_pred, ind)[mask].squeeze()
     pred_box = _transpose_and_gather_feat(box_pred, ind)
