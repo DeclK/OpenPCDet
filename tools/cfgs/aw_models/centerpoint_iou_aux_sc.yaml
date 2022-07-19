@@ -68,15 +68,15 @@ MODEL:
             
             LOSS_CONFIG:
               LOSS_WEIGHTS: {
-                  'cls_weight': 1.0,
-                  'loc_weight': 2.0,
+                  'cls_weight': 0.25,
+                  'loc_weight': 0.25,
                   'code_weights': [1.0, 1.0]
               }
 
         LOSS_CONFIG:
             LOSS_WEIGHTS: {
                 'cls_weight': 1.0,
-                'loc_weight': 2.0,
+                'loc_weight': 0.25,
                 'iou_weight': 1.0,
                 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
             }
@@ -101,10 +101,10 @@ MODEL:
 
 OPTIMIZATION:
     BATCH_SIZE_PER_GPU: 4
-    NUM_EPOCHS: 80
+    NUM_EPOCHS: 160
 
     OPTIMIZER: adam_onecycle
-    LR: 0.003
+    LR: 0.001
     WEIGHT_DECAY: 0.01
     MOMENTUM: 0.9
 

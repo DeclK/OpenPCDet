@@ -204,6 +204,14 @@ def train_model_with_eval(model, optimizer, train_loader, test_loader, eval_info
                 dataloader_iter=dataloader_iter
             )
 
+            # evaluation
+            if trained_epoch % ckpt_save_interval == 0:
+                model_for_eval = model.module if eval_info['dist_test'] else model
+                eval_dict = eval_one_epoch(model=model_for_eval, dataloader=test_loader, epoch_id=trained_epoch, **eval_info)
+                if rank == 0:
+                    for key, val in eval_dict.items():
+                        tb_log.add_scalar(key, val, trained_epoch)
+
             # save trained model
             trained_epoch = cur_epoch + 1
             if trained_epoch % ckpt_save_interval == 0 and rank == 0:
@@ -219,10 +227,3 @@ def train_model_with_eval(model, optimizer, train_loader, test_loader, eval_info
                 save_checkpoint(
                     checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename=ckpt_name,
                 )
-
-            if trained_epoch % ckpt_save_interval == 0:
-                model_for_eval = model.module if eval_info['dist_test'] else model
-                eval_dict = eval_one_epoch(model=model_for_eval, dataloader=test_loader, epoch_id=trained_epoch, **eval_info)
-                if rank == 0:
-                    for key, val in eval_dict.items():
-                        tb_log.add_scalar(key, val, trained_epoch)

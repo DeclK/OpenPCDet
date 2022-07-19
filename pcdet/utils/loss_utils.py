@@ -400,9 +400,9 @@ class IouLoss(nn.Module):
 
   def forward(self, iou_pred, mask, ind, box_pred, box_gt):
     if mask.sum() == 0:
-        return 0
+        return torch.tensor(0.0).to(iou_pred.device)
     mask = mask.bool()
-    pred = _transpose_and_gather_feat(iou_pred, ind)[mask].squeeze()
+    pred = _transpose_and_gather_feat(iou_pred, ind)[mask].view(-1)
     pred_box = _transpose_and_gather_feat(box_pred, ind)
     target = boxes_iou3d_gpu(pred_box[mask], box_gt[mask]).diag()
     target = 2 * target - 1

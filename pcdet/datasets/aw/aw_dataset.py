@@ -8,7 +8,12 @@ import sys
 from pcdet.datasets.dataset import DatasetTemplate
 from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
 from pcdet.utils import box_utils
-
+def pprint(nd_array: np.ndarray):
+    l = nd_array.round(2).tolist()
+    for box in l:
+        for item in box:
+            print(f'{item:>6.2f}', end=' ')
+        print('')
 class AwDataset(DatasetTemplate):
     def __init__(self,
                  dataset_cfg,
@@ -254,6 +259,36 @@ class AwDataset(DatasetTemplate):
         affine_matrix[2,3] = pose[2]
         return affine_matrix
 
+    def calibrate(self, boxes, names):
+        """
+        Calibrate Pedestrian & Cyclist boxes' direction. Because there are lots of wrong annotations
+        in cyclist, and some pedestrian's direction is set to 0. Here we do some calibrations below:
+        1. For cyclist, we assume the W is always the long side. If cyclist box H is longer than W,
+            we switch them, and add pi/2 rotation to its theta
+        2. For pedestrian, we set its theta always be 0.
+        3. All classes' theta is limited within [-pi/2, pi/2]
+        """
+        for name in ['Pedestrian', 'Cyclist']:
+            name_mask = names == name
+            if name == 'Pedestrian':
+                boxes[name_mask, 6] = 0
+            elif name == 'Cyclist':
+                cyclist_mask = boxes[:, 3] \
+                             < boxes[:, 4]
+                cyclist_mask &= name_mask
+                indicator = np.any(cyclist_mask)
+                if indicator:
+                    cur_boxes = boxes[cyclist_mask]
+                    boxes[cyclist_mask, 3] = cur_boxes[:, 4]
+                    boxes[cyclist_mask, 4] = cur_boxes[:, 3]
+                    boxes[cyclist_mask, 6] += np.pi / 2
+
+        boxes[:, 6] = (boxes[:, 6] + 2 * np.pi) % np.pi
+        yaw_mask = boxes[:, 6] > np.pi / 2
+        boxes[yaw_mask, 6] -= np.pi
+        
+        return boxes, indicator
+
     def get_infos(self, num_workers=6, sample_seq_list=None):
         import concurrent.futures as futures
         import json
@@ -353,6 +388,9 @@ class AwDataset(DatasetTemplate):
                         'boxes_3d': boxes_3d,
                         'boxes_2d': boxes_2d_dict
                     })
+
+                    # calibrate, CHK MARK
+                    self.calibrate(annos_dict['boxes_3d'], annos_dict['name'])
 
                     points = self.get_lidar(seq_idx, frame_id, frame_dict)
                     corners_lidar = box_utils.boxes_to_corners_3d(
