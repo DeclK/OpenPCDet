@@ -264,9 +264,8 @@ class AwDataset(DatasetTemplate):
         Calibrate Pedestrian & Cyclist boxes' direction. Because there are lots of wrong annotations
         in cyclist, and some pedestrian's direction is set to 0. Here we do some calibrations below:
         1. For cyclist, we assume the W is always the long side. If cyclist box H is longer than W,
-            we switch them, and add pi/2 rotation to its theta
+            we indicate it as True.
         2. For pedestrian, we set its theta always be 0.
-        3. All classes' theta is limited within [-pi/2, pi/2]
         """
         for name in ['Pedestrian', 'Cyclist']:
             name_mask = names == name
@@ -277,16 +276,6 @@ class AwDataset(DatasetTemplate):
                              < boxes[:, 4]
                 cyclist_mask &= name_mask
                 indicator = np.any(cyclist_mask)
-                if indicator:
-                    cur_boxes = boxes[cyclist_mask]
-                    boxes[cyclist_mask, 3] = cur_boxes[:, 4]
-                    boxes[cyclist_mask, 4] = cur_boxes[:, 3]
-                    boxes[cyclist_mask, 6] += np.pi / 2
-
-        boxes[:, 6] = (boxes[:, 6] + 2 * np.pi) % np.pi
-        yaw_mask = boxes[:, 6] > np.pi / 2
-        boxes[yaw_mask, 6] -= np.pi
-        
         return boxes, indicator
 
     def get_infos(self, num_workers=6, sample_seq_list=None):
@@ -390,7 +379,10 @@ class AwDataset(DatasetTemplate):
                     })
 
                     # calibrate, CHK MARK
-                    self.calibrate(annos_dict['boxes_3d'], annos_dict['name'])
+                    _, indicator = self.calibrate(annos_dict['boxes_3d'], annos_dict['name'])
+                    if indicator:
+                        print(f'Remove bad sample {frame_id}, due to cyclist issues')
+                        continue
 
                     points = self.get_lidar(seq_idx, frame_id, frame_dict)
                     corners_lidar = box_utils.boxes_to_corners_3d(

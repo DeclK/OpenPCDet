@@ -6,12 +6,10 @@ from torch.nn.init import kaiming_normal_
 from ..model_utils import model_nms_utils
 from ..model_utils import centernet_utils
 from ...utils import loss_utils
-from .aux_module.cgam import CGAM, CGAM_MultiHead
-from pcdet.utils.box_utils import boxes_to_corners_3d
-import torch.nn.functional as F
 
-class SeparateHeadAux(nn.Module):
-    def __init__(self, input_channels, aux_channels, sep_head_dict, init_bias=-2.19, use_bias=False):
+
+class SeparateHead(nn.Module):
+    def __init__(self, input_channels, sep_head_dict, init_bias=-2.19, use_bias=False):
         super().__init__()
         self.sep_head_dict = sep_head_dict
 
@@ -22,7 +20,7 @@ class SeparateHeadAux(nn.Module):
             fc_list = []
             for k in range(num_conv - 1):
                 fc_list.append(nn.Sequential(
-                    nn.Conv2d(input_channels + aux_channels, input_channels, kernel_size=3, stride=1, padding=1, bias=use_bias),
+                    nn.Conv2d(input_channels, input_channels, kernel_size=3, stride=1, padding=1, bias=use_bias),
                     nn.BatchNorm2d(input_channels),
                     nn.ReLU()
                 ))
@@ -47,7 +45,7 @@ class SeparateHeadAux(nn.Module):
         return ret_dict
 
 
-class CenterHeadAux(nn.Module):
+class CenterHeadIoUDebug(nn.Module):
     def __init__(self, model_cfg, input_channels, num_class, class_names, grid_size, point_cloud_range, voxel_size,
                  predict_boxes_when_training=True):
         super().__init__()
@@ -73,17 +71,6 @@ class CenterHeadAux(nn.Module):
         total_classes = sum([len(x) for x in self.class_names_each_head])
         assert total_classes == len(self.class_names), f'class_names_each_head={self.class_names_each_head}'
 
-        if model_cfg.CGAM.get('USE_MULTI_HEAD', False):
-            self.aux_module = CGAM_MultiHead(model_cfg.CGAM, input_channels, class_names, 
-                                    voxel_size, point_cloud_range)
-            aux_channels = self.aux_module.corner_types * (num_class + 2)
-        # CGAM module
-        else:
-            self.aux_module = CGAM(model_cfg.CGAM, input_channels, class_names, 
-                                    voxel_size, point_cloud_range)
-            # adjust input channels for aux feature, hm + corner
-            aux_channels = self.aux_module.corner_types * (1 + 2)
-
         self.shared_conv = nn.Sequential(
             nn.Conv2d(
                 input_channels, self.model_cfg.SHARED_CONV_CHANNEL, 3, stride=1, padding=1,
@@ -99,15 +86,13 @@ class CenterHeadAux(nn.Module):
             cur_head_dict = copy.deepcopy(self.separate_head_cfg.HEAD_DICT)
             cur_head_dict['hm'] = dict(out_channels=len(cur_class_names), num_conv=self.model_cfg.NUM_HM_CONV)
             self.heads_list.append(
-                SeparateHeadAux(
+                SeparateHead(
                     input_channels=self.model_cfg.SHARED_CONV_CHANNEL,
-                    aux_channels=aux_channels,
                     sep_head_dict=cur_head_dict,
                     init_bias=-2.19,
                     use_bias=self.model_cfg.get('USE_BIAS_BEFORE_NORM', False)
                 )
             )
-
         self.predict_boxes_when_training = predict_boxes_when_training
         self.forward_ret_dict = {}
         self.build_losses()
@@ -292,7 +277,7 @@ class CenterHeadAux(nn.Module):
         tb_dict['rpn_loss'] = loss.item()
         return loss, tb_dict
 
-    def generate_predicted_boxes(self, batch_size, pred_dicts, pred_corners):
+    def generate_predicted_boxes(self, batch_size, pred_dicts):
         post_process_cfg = self.model_cfg.POST_PROCESSING
         post_center_range = torch.tensor(post_process_cfg.POST_CENTER_LIMIT_RANGE).cuda().float()
 
@@ -311,7 +296,6 @@ class CenterHeadAux(nn.Module):
             B, _, H, W = batch_box_preds.size()
             batch_box_preds = batch_box_preds.permute(0, 2, 3, 1).view(B, H*W, -1)
             batch_hm = pred_dict['hm'].sigmoid().permute(0, 2, 3, 1).view(B, H*W, -1)
-            batch_cnr_hm = pred_corners['hm']
 
             if 'iou' in pred_dict.keys():
                 batch_iou = pred_dict['iou'].permute(0, 2, 3, 1).view(B, H*W)
@@ -320,13 +304,10 @@ class CenterHeadAux(nn.Module):
 
             for i in range(B):   # for each batch
                 box_preds = batch_box_preds[i]
-                cnr_preds = batch_cnr_hm[i]
-                iou_preds = batch_iou[i]
                 hm_preds = batch_hm[i]
+                iou_preds = batch_iou[i]
                 scores, labels = torch.max(hm_preds, dim=-1)
                 labels = self.class_id_mapping_each_head[idx][labels.long()]
-
-                # cnr_score = self.aux_module.get_corner_scores(cnr_preds, box_preds)
 
                 if self.rectifier.size(0) > 1:           # class specific
                     assert self.rectifier.size(0) == self.num_class
@@ -334,12 +315,17 @@ class CenterHeadAux(nn.Module):
                 else: rectifier = self.rectifier
 
                 score_mask = scores > post_process_cfg.SCORE_THRESH
-                distance_mask = (box_preds[..., :3] >= post_center_range[:3]).all(1) \
-                              & (box_preds[..., :3] <= post_center_range[3:]).all(1)
-                mask = distance_mask & score_mask
+                # distance_mask = (box_preds[..., :3] >= post_center_range[:3]).all(1) \
+                #               & (box_preds[..., :3] <= post_center_range[3:]).all(1)
+                # mask = distance_mask & score_mask
 
                 scores = torch.pow(scores, 1 - rectifier) \
                        * torch.pow(iou_preds, rectifier)
+
+                # score_mask = scores > post_process_cfg.SCORE_THRESH
+                distance_mask = (box_preds[..., :3] >= post_center_range[:3]).all(1) \
+                              & (box_preds[..., :3] <= post_center_range[3:]).all(1)
+                mask = distance_mask & score_mask
 
                 box_preds = box_preds[mask]
                 scores = scores[mask]
@@ -349,15 +335,15 @@ class CenterHeadAux(nn.Module):
                 if post_process_cfg.NMS_CONFIG.NMS_NAME == 'agnostic_nms':
                     selected, selected_scores = \
                             model_nms_utils.class_agnostic_nms(
-                            box_scores=scores, box_preds=box_preds,
-                            nms_config=post_process_cfg.NMS_CONFIG,
+                                box_scores=scores, box_preds=box_preds,
+                                nms_config=post_process_cfg.NMS_CONFIG,
                     )
                     selected_boxes = box_preds[selected]
                     selected_labels = labels[selected]
 
                 elif post_process_cfg.NMS_CONFIG.NMS_NAME == 'class_specific_nms':
                     selected_scores, selected_labels, selected_boxes = \
-                            model_nms_utils.class_specific_nms(
+                            model_nms_utils.class_specific_nms_debug(
                                 cls_scores=scores, box_preds=box_preds, 
                                 labels=labels, nms_config=post_process_cfg.NMS_CONFIG,
                                 class_id=self.class_id_mapping_each_head[idx],
@@ -398,11 +384,9 @@ class CenterHeadAux(nn.Module):
 
     def forward(self, data_dict):
         spatial_features_2d = data_dict['spatial_features_2d']
-        aux_feat, pred_corners = self.aux_module(data_dict)   # aux module
         x = self.shared_conv(spatial_features_2d)
-        x = torch.cat((x, aux_feat.detach()), dim=1)
 
-        pred_dicts = []
+        pred_dicts = [] # is a list actually
         for head in self.heads_list:
             pred_dicts.append(head(x))
 
@@ -417,7 +401,7 @@ class CenterHeadAux(nn.Module):
 
         if not self.training or self.predict_boxes_when_training:
             pred_dicts = self.generate_predicted_boxes(
-                data_dict['batch_size'], pred_dicts, pred_corners,
+                data_dict['batch_size'], pred_dicts
             )
 
             if self.predict_boxes_when_training:

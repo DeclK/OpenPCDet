@@ -15,7 +15,7 @@ class AnchorHeadAux(AnchorHeadTemplate):
         )
         # CGAM module
         self.aux_module = CGAM(model_cfg.CGAM, input_channels, class_names, 
-                                grid_size, voxel_size, point_cloud_range)
+                               voxel_size, point_cloud_range)
         # adjust input channels for aux feature
         aux_channels = self.aux_module.corner_types * (1 + 2)
         if not self.model_cfg.get('USE_SE_FUSION', False): 

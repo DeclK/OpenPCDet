@@ -54,6 +54,7 @@ MODEL:
 
         CGAM: # corner-guided auxiliary module
             CORNER_TYPES: ['LT', 'RT', 'RD', 'LD']
+            # USE_MULTI_HEAD: True
             SHARED_CONV_CHANNEL: 64
 
             HEAD_DICT: {
@@ -85,7 +86,7 @@ MODEL:
             SCORE_THRESH: 0.1
             POST_CENTER_LIMIT_RANGE: [-61.2, -61.2, -10.0, 61.2, 61.2, 10.0]
             MAX_OBJ_PER_SAMPLE: 500
-            RECTIFIER: [0.7, 0.7, 0.4, 0.4]
+            RECTIFIER: 0.9
             NMS_CONFIG:
                 NMS_NAME: class_specific_nms
                 NMS_TYPE: nms_gpu

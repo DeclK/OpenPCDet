@@ -203,6 +203,7 @@ def train_model_with_eval(model, optimizer, train_loader, test_loader, eval_info
                 total_it_each_epoch=total_it_each_epoch,
                 dataloader_iter=dataloader_iter
             )
+            trained_epoch = cur_epoch + 1
 
             # evaluation
             if trained_epoch % ckpt_save_interval == 0:
@@ -213,7 +214,6 @@ def train_model_with_eval(model, optimizer, train_loader, test_loader, eval_info
                         tb_log.add_scalar(key, val, trained_epoch)
 
             # save trained model
-            trained_epoch = cur_epoch + 1
             if trained_epoch % ckpt_save_interval == 0 and rank == 0:
 
                 ckpt_list = glob.glob(str(ckpt_save_dir / 'checkpoint_epoch_*.pth'))

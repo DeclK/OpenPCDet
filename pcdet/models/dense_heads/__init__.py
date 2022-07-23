@@ -12,6 +12,7 @@ from .anchor_head_aux import AnchorHeadAux
 from .anchor_head_semi_aux import AnchorHeadSemiAux
 from .center_head_semi_aux import CenterHeadSemiAux
 from .center_head_iou import CenterHeadIoU
+from .center_head_iou_debug import CenterHeadIoUDebug
 
 __all__ = {
     'AnchorHeadTemplate': AnchorHeadTemplate,
@@ -27,5 +28,6 @@ __all__ = {
     'AnchorHeadAux': AnchorHeadAux,
     'AnchorHeadSemiAux': AnchorHeadSemiAux,
     'CenterHeadSemiAux': CenterHeadSemiAux,
-    'CenterHeadIoU': CenterHeadIoU
+    'CenterHeadIoU': CenterHeadIoU,
+    'CenterHeadIoUDebug': CenterHeadIoUDebug,
 }

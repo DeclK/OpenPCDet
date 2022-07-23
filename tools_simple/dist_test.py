@@ -9,6 +9,7 @@ BATCH_SIZE = NUM_GPUS * samples_per_gpu
 CUDA_INDEX = ','.join(map(str, gpu_index))
 
 # Given ckpt dir
+
 # CKPT_DIR = ''
 # START_EPOCH = 158
 

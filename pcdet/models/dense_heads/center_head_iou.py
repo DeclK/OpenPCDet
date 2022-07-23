@@ -307,6 +307,7 @@ class CenterHeadIoU(nn.Module):
                 hm_preds = batch_hm[i]
                 iou_preds = batch_iou[i]
                 scores, labels = torch.max(hm_preds, dim=-1)
+                labels = self.class_id_mapping_each_head[idx][labels.long()]
 
                 if self.rectifier.size(0) > 1:           # class specific
                     assert self.rectifier.size(0) == self.num_class
@@ -339,13 +340,13 @@ class CenterHeadIoU(nn.Module):
                     selected_scores, selected_labels, selected_boxes = \
                             model_nms_utils.class_specific_nms(
                                 cls_scores=scores, box_preds=box_preds, 
-                                labels=labels, num_class=self.num_class,
-                                nms_config=post_process_cfg.NMS_CONFIG,
+                                labels=labels, nms_config=post_process_cfg.NMS_CONFIG,
+                                class_id=self.class_id_mapping_each_head[idx],
                     )
                 else:
                     raise NotImplementedError
                     
-                selected_labels = self.class_id_mapping_each_head[idx][selected_labels.long()]
+                # selected_labels = self.class_id_mapping_each_head[idx][selected_labels.long()]
 
                 ret_dict[i]['pred_boxes'].append(selected_boxes)
                 ret_dict[i]['pred_scores'].append(selected_scores)

@@ -13,7 +13,7 @@ import re
     # 4. running scripts
 
 
-grid = np.round(np.linspace(0.4, 0.8, num=41), 2)
+grid = np.round(np.linspace(0.1, 0.9, num=9), 2)
 grid = grid.tolist()
 config_file = Path('')
 
@@ -47,6 +47,7 @@ for value in grid:
 # dir = ''
 # dir = Path(dir)
 # for f in dir.iterdir():
+#     if f.suffix != '.txt': continue
 #     str = f.read_text()
 #     pattern = re.compile(r'\|[\w\W]*\|')
 #     thresh = re.search(r'RECTIFIER: 0.\d*', str).group()
