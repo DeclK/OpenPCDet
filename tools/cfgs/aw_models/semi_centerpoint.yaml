@@ -1,11 +1,10 @@
-CLASS_NAMES: ['Car', 'Bus', 'Truck', 'Pedestrian', 'Cyclist']
+CLASS_NAMES: ['Car', 'Bus', 'Cyclist', 'Pedestrian']
 # TODO aw semi dataset
 USE_PRETRAIN_MODEL: False
-PRETRAIN_CKPT: ../output/once_models/ckpt/checkpoint_xx.pth
-CLOUD_PRETRAIN_CKPT: /home/work/user-job-dir/ONCE_Benchmark/output/once_models/ckpt/checkpoint_xx.pth
 
 DATA_CONFIG: 
-    _BASE_CONFIG_: cfgs/dataset_configs/once_semi_dataset.yaml
+    _BASE_CONFIG_: cfgs/dataset_configs/aw_semi_dataset.yaml
+    DATA_PATH: '../data/aw_16'
     LABELED_DATA_FOR: ['teacher', 'student']
     UNLABELED_DATA_FOR: ['teacher', 'student']
     DATA_SPLIT: {
@@ -58,8 +57,8 @@ OPTIMIZATION:
 
     SEMI_SUP_LEARNING:
         NAME: SESS
-        LD_BATCH_SIZE_PER_GPU: 4    # 1
-        UD_BATCH_SIZE_PER_GPU: 4
+        LD_BATCH_SIZE_PER_GPU: 8    # 1
+        UD_BATCH_SIZE_PER_GPU: 8
         NUM_EPOCHS: 60
 
         FILTER_BOXES: False
@@ -97,30 +96,30 @@ MODEL:
     NAME: SemiCenterPoint
 
     VFE:
-        NAME: MeanVFE
-
-    BACKBONE_3D:
-        NAME: VoxelResBackBone8x
+        NAME: PillarVFE
+        WITH_DISTANCE: False
+        USE_ABSLOTE_XYZ: True
+        USE_NORM: True
+        NUM_FILTERS: [64, 64]
 
     MAP_TO_BEV:
-        NAME: HeightCompression
-        NUM_BEV_FEATURES: 256
+        NAME: PointPillarScatter
+        NUM_BEV_FEATURES: 64
 
     BACKBONE_2D:
-        NAME: BaseBEVBackbonePCDet
-
-        LAYER_NUMS: [5, 5]
-        LAYER_STRIDES: [1, 2]
-        NUM_FILTERS: [128, 256]
-        UPSAMPLE_STRIDES: [1, 2]
-        NUM_UPSAMPLE_FILTERS: [256, 256]
+        NAME: BaseBEVBackbone
+        LAYER_NUMS: [3, 5, 5]
+        LAYER_STRIDES: [2, 2, 2]
+        NUM_FILTERS: [64, 128, 256]
+        UPSAMPLE_STRIDES: [0.5, 1, 2]
+        NUM_UPSAMPLE_FILTERS: [128, 128, 128]
 
     DENSE_HEAD:
         NAME: CenterHeadSemi
         CLASS_AGNOSTIC: False
 
         CLASS_NAMES_EACH_HEAD: [
-            ['Car', 'Bus', 'Truck', 'Pedestrian', 'Cyclist']
+            ['Car'], ['Bus'], ['Cyclist'], ['Pedestrian']
         ]
 
         SHARED_CONV_CHANNEL: 64
@@ -133,10 +132,11 @@ MODEL:
                 'center_z': {'out_channels': 1, 'num_conv': 2},
                 'dim': {'out_channels': 3, 'num_conv': 2},
                 'rot': {'out_channels': 2, 'num_conv': 2},
+                'iou': {'out_channels': 1, 'num_conv': 2},
             }
 
         TARGET_ASSIGNER_CONFIG:
-            FEATURE_MAP_STRIDE: 8
+            FEATURE_MAP_STRIDE: 4
             NUM_MAX_OBJS: 500
             GAUSSIAN_OVERLAP: 0.1
             MIN_RADIUS: 2
@@ -144,15 +144,18 @@ MODEL:
         LOSS_CONFIG:
             LOSS_WEIGHTS: {
                 'cls_weight': 1.0,
-                'loc_weight': 2.0,
+                'loc_weight': 0.25,
+                'iou_weight': 1.0,
                 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
             }
 
         POST_PROCESSING:
             SCORE_THRESH: 0.1
-            POST_CENTER_LIMIT_RANGE: [-75.2, -75.2, -5.0, 75.2, 75.2, 3.0]
+            POST_CENTER_LIMIT_RANGE: [-61.2, -61.2, -10.0, 61.2, 61.2, 10.0]
             MAX_OBJ_PER_SAMPLE: 500
+            RECTIFIER: [0.7, 0.7, 0.4, 0.4]
             NMS_CONFIG:
+                NMS_NAME: class_specific_nms
                 NMS_TYPE: nms_gpu
                 NMS_THRESH: 0.01
                 NMS_PRE_MAXSIZE: 500

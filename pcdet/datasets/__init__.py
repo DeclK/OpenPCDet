@@ -14,6 +14,7 @@ from .once.once_dataset import ONCEDataset
 from .aw.aw_dataset import AwDataset
 
 from .once.once_semi_dataset import ONCEPretrainDataset, ONCELabeledDataset, ONCEUnlabeledDataset, ONCETestDataset, split_once_semi_data
+from .aw.aw_semi_dataset import AWPretrainDataset, AWLabeledDataset, AWUnlabeledDataset, AWTestDataset
 
 __all__ = {
     'DatasetTemplate': DatasetTemplate,
@@ -33,6 +34,13 @@ _semi_dataset_dict = {
         'LABELED': ONCELabeledDataset,
         'UNLABELED': ONCEUnlabeledDataset,
         'TEST': ONCETestDataset
+    },
+    'AWDataset': {
+        'PARTITION_FUNC': split_once_semi_data,
+        'PRETRAIN': AWPretrainDataset,
+        'LABELED': AWLabeledDataset,
+        'UNLABELED': AWUnlabeledDataset,
+        'TEST': AWTestDataset
     }
 }
 

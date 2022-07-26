@@ -134,5 +134,6 @@ def sess(teacher_model, student_model,
     consistency_weight = cfgs.CONSISTENCY_WEIGHT * sigmoid_rampup(epoch_id, cfgs.TEACHER.EMA_EPOCH[0], cfgs.TEACHER.EMA_EPOCH[1])
 
     loss = sup_loss + consistency_weight * consistency_loss
-    tb_dict['consistency_loss'] = consistency_loss.item()
+    tb_dict['consistency_loss'] = consistency_loss if isinstance(consistency_loss, float)\
+                                                   else consistency_loss.item()
     return loss, tb_dict, disp_dict

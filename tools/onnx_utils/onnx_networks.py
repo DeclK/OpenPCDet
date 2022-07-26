@@ -205,13 +205,13 @@ class CenterHeadIoU(nn.Module):
                 hm_preds = batch_hm[i]
                 iou_preds = batch_iou[i]
                 scores, labels = torch.max(hm_preds, dim=-1)
+                labels = self.class_id_mapping_each_head[idx][labels.long()]
 
                 rectifier = self.rectifier[labels]   # (H*W,)
+                iou_preds = torch.clamp(iou_preds, min=0.0, max=1.0)
                 scores = torch.pow(scores, 1 - rectifier) \
                        * torch.pow(iou_preds, rectifier)
                 scores = scores.view(1, -1, 1)      # ONNX format need, shape (1, N, 1)
-
-                labels = self.class_id_mapping_each_head[idx][labels.long()]
 
                 ret_dict[i]['pred_boxes'].append(box_preds)
                 ret_dict[i]['pred_scores'].append(scores)

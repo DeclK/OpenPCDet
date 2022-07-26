@@ -319,13 +319,13 @@ class CenterHeadIoU(nn.Module):
                               & (box_preds[..., :3] <= post_center_range[3:]).all(1)
                 mask = distance_mask & score_mask
 
+                iou_preds = torch.clamp(iou_preds, min=0, max=1.)
                 scores = torch.pow(scores, 1 - rectifier) \
                        * torch.pow(iou_preds, rectifier)
 
                 box_preds = box_preds[mask]
                 scores = scores[mask]
                 labels = labels[mask]
-                iou_preds = torch.clamp(iou_preds[mask], min=0, max=1.)
 
                 if post_process_cfg.NMS_CONFIG.NMS_NAME == 'agnostic_nms':
                     selected, selected_scores = \

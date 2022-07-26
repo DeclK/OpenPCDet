@@ -311,7 +311,7 @@ class CenterHeadAux(nn.Module):
             B, _, H, W = batch_box_preds.size()
             batch_box_preds = batch_box_preds.permute(0, 2, 3, 1).view(B, H*W, -1)
             batch_hm = pred_dict['hm'].sigmoid().permute(0, 2, 3, 1).view(B, H*W, -1)
-            batch_cnr_hm = pred_corners['hm']
+            # batch_cnr_hm = pred_corners['hm']
 
             if 'iou' in pred_dict.keys():
                 batch_iou = pred_dict['iou'].permute(0, 2, 3, 1).view(B, H*W)
@@ -320,7 +320,7 @@ class CenterHeadAux(nn.Module):
 
             for i in range(B):   # for each batch
                 box_preds = batch_box_preds[i]
-                cnr_preds = batch_cnr_hm[i]
+                # cnr_preds = batch_cnr_hm[i]
                 iou_preds = batch_iou[i]
                 hm_preds = batch_hm[i]
                 scores, labels = torch.max(hm_preds, dim=-1)
