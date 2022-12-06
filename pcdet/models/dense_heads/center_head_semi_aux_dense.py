@@ -7,8 +7,7 @@ from ..model_utils import model_nms_utils
 from ..model_utils import centernet_utils
 from ...utils import loss_utils
 from .aux_module.cgam import CGAM, CGAM_MultiHead
-from pcdet.utils.box_utils import boxes_to_corners_3d
-import torch.nn.functional as F
+
 
 class SeparateHeadAux(nn.Module):
     def __init__(self, input_channels, aux_channels, sep_head_dict, init_bias=-2.19, use_bias=False):
@@ -47,7 +46,7 @@ class SeparateHeadAux(nn.Module):
         return ret_dict
 
 
-class CenterHeadAux(nn.Module):
+class CenterHeadSemiAux(nn.Module):
     def __init__(self, model_cfg, input_channels, num_class, class_names, grid_size, point_cloud_range, voxel_size,
                  predict_boxes_when_training=True):
         super().__init__()
@@ -57,7 +56,6 @@ class CenterHeadAux(nn.Module):
         self.point_cloud_range = point_cloud_range
         self.voxel_size = voxel_size
         self.feature_map_stride = self.model_cfg.TARGET_ASSIGNER_CONFIG.get('FEATURE_MAP_STRIDE', None)
-        self.rectifier = torch.tensor(model_cfg.POST_PROCESSING.get('RECTIFIER', 0.0)).view(-1).cuda()
 
         self.class_names = class_names
         self.class_names_each_head = []
@@ -110,6 +108,7 @@ class CenterHeadAux(nn.Module):
 
         self.predict_boxes_when_training = predict_boxes_when_training
         self.forward_ret_dict = {}
+        self.model_type = None
         self.build_losses()
 
     def build_losses(self):
@@ -292,7 +291,7 @@ class CenterHeadAux(nn.Module):
         tb_dict['rpn_loss'] = loss.item()
         return loss, tb_dict
 
-    def generate_predicted_boxes(self, batch_size, pred_dicts, pred_corners):
+    def generate_predicted_boxes(self, batch_size, pred_dicts):
         post_process_cfg = self.model_cfg.POST_PROCESSING
         post_center_range = torch.tensor(post_process_cfg.POST_CENTER_LIMIT_RANGE).cuda().float()
 
@@ -311,7 +310,6 @@ class CenterHeadAux(nn.Module):
             B, _, H, W = batch_box_preds.size()
             batch_box_preds = batch_box_preds.permute(0, 2, 3, 1).view(B, H*W, -1)
             batch_hm = pred_dict['hm'].sigmoid().permute(0, 2, 3, 1).view(B, H*W, -1)
-            # batch_cnr_hm = pred_corners['hm']
 
             if 'iou' in pred_dict.keys():
                 batch_iou = pred_dict['iou'].permute(0, 2, 3, 1).view(B, H*W)
@@ -320,13 +318,10 @@ class CenterHeadAux(nn.Module):
 
             for i in range(B):   # for each batch
                 box_preds = batch_box_preds[i]
-                # cnr_preds = batch_cnr_hm[i]
-                iou_preds = batch_iou[i]
                 hm_preds = batch_hm[i]
+                iou_preds = batch_iou[i]
                 scores, labels = torch.max(hm_preds, dim=-1)
                 labels = self.class_id_mapping_each_head[idx][labels.long()]
-
-                # cnr_score = self.aux_module.get_corner_scores(cnr_preds, box_preds)
 
                 if self.rectifier.size(0) > 1:           # class specific
                     assert self.rectifier.size(0) == self.num_class
@@ -338,19 +333,21 @@ class CenterHeadAux(nn.Module):
                               & (box_preds[..., :3] <= post_center_range[3:]).all(1)
                 mask = distance_mask & score_mask
 
+                iou_preds = torch.clamp(iou_preds, min=1e-3, max=1.)
+                scores = torch.clamp(scores, min=1e-3, max=1.0) # pow needs non-negative input
+
                 scores = torch.pow(scores, 1 - rectifier) \
                        * torch.pow(iou_preds, rectifier)
 
                 box_preds = box_preds[mask]
                 scores = scores[mask]
                 labels = labels[mask]
-                iou_preds = torch.clamp(iou_preds[mask], min=0, max=1.)
 
-                if post_process_cfg.NMS_CONFIG.NMS_NAME == 'class_agnostic_nms':
+                if post_process_cfg.NMS_CONFIG.NMS_NAME == 'agnostic_nms':
                     selected, selected_scores = \
                             model_nms_utils.class_agnostic_nms(
-                            box_scores=scores, box_preds=box_preds,
-                            nms_config=post_process_cfg.NMS_CONFIG,
+                                box_scores=scores, box_preds=box_preds,
+                                nms_config=post_process_cfg.NMS_CONFIG,
                     )
                     selected_boxes = box_preds[selected]
                     selected_labels = labels[selected]
@@ -378,24 +375,6 @@ class CenterHeadAux(nn.Module):
 
         return ret_dict
 
-    @staticmethod
-    def reorder_rois_for_refining(batch_size, pred_dicts):
-        num_max_rois = max([len(cur_dict['pred_boxes']) for cur_dict in pred_dicts])
-        num_max_rois = max(1, num_max_rois)  # at least one faked rois to avoid error
-        pred_boxes = pred_dicts[0]['pred_boxes']
-
-        rois = pred_boxes.new_zeros((batch_size, num_max_rois, pred_boxes.shape[-1]))
-        roi_scores = pred_boxes.new_zeros((batch_size, num_max_rois))
-        roi_labels = pred_boxes.new_zeros((batch_size, num_max_rois)).long()
-
-        for bs_idx in range(batch_size):
-            num_boxes = len(pred_dicts[bs_idx]['pred_boxes'])
-
-            rois[bs_idx, :num_boxes, :] = pred_dicts[bs_idx]['pred_boxes']
-            roi_scores[bs_idx, :num_boxes] = pred_dicts[bs_idx]['pred_scores']
-            roi_labels[bs_idx, :num_boxes] = pred_dicts[bs_idx]['pred_labels']
-        return rois, roi_scores, roi_labels
-
     def forward(self, data_dict):
         spatial_features_2d = data_dict['spatial_features_2d']
         aux_feat, pred_corners = self.aux_module(data_dict)   # aux module
@@ -405,28 +384,27 @@ class CenterHeadAux(nn.Module):
         pred_dicts = []
         for head in self.heads_list:
             pred_dicts.append(head(x))
-
-        if self.training:
-            target_dict = self.assign_targets(
-                data_dict['gt_boxes'], feature_map_size=spatial_features_2d.size()[2:],
-                feature_map_stride=data_dict.get('spatial_features_2d_strides', None)
-            )
-            self.forward_ret_dict['target_dicts'] = target_dict
-
         self.forward_ret_dict['pred_dicts'] = pred_dicts
 
-        if not self.training or self.predict_boxes_when_training:
-            pred_dicts = self.generate_predicted_boxes(
-                data_dict['batch_size'], pred_dicts, pred_corners,
-            )
+        if self.model_type == 'origin':
+            if self.training:
+                target_dict = self.assign_targets(
+                    data_dict['gt_boxes'], feature_map_size=spatial_features_2d.size()[2:],
+                    feature_map_stride=data_dict.get('spatial_features_2d_strides', None))
+                self.forward_ret_dict['target_dicts'] = target_dict
 
-            if self.predict_boxes_when_training:
-                rois, roi_scores, roi_labels = self.reorder_rois_for_refining(data_dict['batch_size'], pred_dicts)
-                data_dict['rois'] = rois
-                data_dict['roi_scores'] = roi_scores
-                data_dict['roi_labels'] = roi_labels
-                data_dict['has_class_labels'] = True
-            else:
-                data_dict['final_box_dicts'] = pred_dicts
+            if not self.training or self.predict_boxes_when_training:
+                pred_dicts = self.generate_predicted_boxes(
+                    data_dict['batch_size'], pred_dicts)
+
+        if self.model_type == 'student':
+        # student & teacher have no post processing, we want to use dense prediction
+            if self.training and 'gt_boxes' in data_dict:
+                target_dict = self.assign_targets(
+                    data_dict['gt_boxes'], feature_map_size=spatial_features_2d.size()[2:],
+                    feature_map_stride=data_dict.get('spatial_features_2d_strides', None))
+                self.forward_ret_dict['target_dicts'] = target_dict
+
+        data_dict['final_box_dicts'] = pred_dicts
 
         return data_dict

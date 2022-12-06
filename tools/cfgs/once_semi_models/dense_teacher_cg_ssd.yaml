@@ -13,8 +13,9 @@ DATA_CONFIG:
       'test': val,
       'raw': False,
     }
-
-    TEACHER_AUGMENTOR:
+    # We apply the same augmentation for teacher & student 
+    USE_SHARED_AUGMENTOR: True
+    SHARED_AUGMENTOR:
       DISABLE_AUG_LIST: ['placeholder']
       AUG_CONFIG_LIST:
         - NAME: random_world_flip
@@ -24,17 +25,17 @@ DATA_CONFIG:
           WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
 
         - NAME: random_world_scaling
+          WORLD_SCALE_RANGE: [0.95, 1.05]    
+
+    TEACHER_AUGMENTOR:
+      DISABLE_AUG_LIST: ['random_world_scaling']
+      AUG_CONFIG_LIST:
+        - NAME: random_world_scaling
           WORLD_SCALE_RANGE: [0.95, 1.05]
 
     STUDENT_AUGMENTOR:
-      DISABLE_AUG_LIST: ['placeholder']
+      DISABLE_AUG_LIST: ['random_world_scaling']
       AUG_CONFIG_LIST:
-        - NAME: random_world_flip
-          ALONG_AXIS_LIST: ['x', 'y']
-
-        - NAME: random_world_rotation
-          WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
-
         - NAME: random_world_scaling
           WORLD_SCALE_RANGE: [0.95, 1.05]
         
@@ -57,10 +58,10 @@ OPTIMIZATION:
         GRAD_NORM_CLIP: 10
 
     SEMI_SUP_LEARNING:
-        NAME: SESS
+        NAME: DenseTeacher
         LD_BATCH_SIZE_PER_GPU: 2    # 1
         UD_BATCH_SIZE_PER_GPU: 4
-        NUM_EPOCHS: 60
+        NUM_EPOCHS: 30
 
         FILTER_BY_NMS: True
         NMS:
@@ -77,7 +78,7 @@ OPTIMIZATION:
         FILTER_BY_TOPK: False
         #TOPK: 128
 
-        CONSISTENCY_WEIGHT: 1 # 10
+        CONSISTENCY_WEIGHT: 4 # 10
         CENTER_WEIGHT: 0
         SIZE_WEIGHT: 0
         CLASS_WEIGHT: 2
@@ -133,6 +134,7 @@ MODEL:
         CLASS_AGNOSTIC: False
 
         USE_DIRECTION_CLASSIFIER: True
+        USE_SE_FUSION: False
         DIR_OFFSET: 0.78539
         DIR_LIMIT_OFFSET: 0.0
         NUM_DIR_BINS: 2
@@ -214,8 +216,8 @@ MODEL:
             
             LOSS_CONFIG:
               LOSS_WEIGHTS: {
-                  'cls_weight': 0.25,    # consider 0.25
-                  'loc_weight': 0.25,    # consider 0.5
+                  'cls_weight': 0.25,
+                  'loc_weight': 0.25,
                   'code_weights': [1.0, 1.0]
               }
 
@@ -229,7 +231,6 @@ MODEL:
 
     POST_PROCESSING:
         RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
-        RECTIFIER: 0.6
         SCORE_THRESH: 0.1
         OUTPUT_RAW_SCORE: False
 

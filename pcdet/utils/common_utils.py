@@ -299,23 +299,39 @@ class EasyPickle:
 class Timer:
     """
     A simple timer. You need to start timer first, and tick the time.
-    Use info function to print time info
+    Use `info` function to print time info
     """
     def __init__(self) -> None:
-        self.time_list = []
-        self.name_list = []
-    def start(self):
-        self.time_list.append(time.time())
-        self.name_list.append('start')
-    def tick(self, str=None):
-        assert self.name_list[0] == 'start', 'Timer is not started'
-        self.time_list.append(time.time())
-        name = str if str else len(self.name_list)
-        self.name_list.append(name)
+        self.start_info = None
+        from collections import defaultdict
+        self.named_time = defaultdict(list)
+        
+    def start(self, name=None):
+        name = name if name else len(self.named_time)
+        self.start_info = (time.time(), name)
+
+    def tick(self):
+        if self.start_info is None: return
+        start, name = self.start_info
+        used_time = time.time() - start
+        self.named_time[name].append(used_time)
+        self.start_info = None  # clean a tick
+
+    def clean(self):
+        self.__init__()
+
     def info(self):
+        N = len(self.named_time)
+        if len(self.named_time) == 0:
+            print('NO TIME RECORED')
+            return
+
         print('***********TIME INFO***********')
-        for i in range(1, len(self.time_list)):
-            diff = self.time_list[i] - self.time_list[i - 1]
-            print(f'{self.name_list[i]}: {diff:.3f}s')
+        for name, used_times in self.named_time.items():
+            N  = len(used_times)
+            mini = min(used_times)
+            maxi = max(used_times)
+            aver = sum(used_times) / N
+            print(f'{name}: mean {aver:.4f}s, total {N} items, min {mini:.3f}s, max {maxi:.4f}s')
         print('*******************************')
 

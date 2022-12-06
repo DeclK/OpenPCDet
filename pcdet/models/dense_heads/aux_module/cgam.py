@@ -231,8 +231,8 @@ class CGAM(nn.Module):
         x = self.shared_conv(spatial_features_2d)
 
         pred_dicts = []
-        for head in self.head_list:
-            pred_dicts.append(head(x))
+        for head in self.head_list:     # loop will do only once here
+            pred_dicts.append(head(x))  # because it's single head
         
         if self.model_cfg.HM_NORMALIZATION:
             for pred_dict in pred_dicts:
@@ -451,7 +451,7 @@ class CGAM_MultiHead(nn.Module):
         for head in self.head_list:
             pred_dicts.append(head(x))
         
-        if self.model_cfg.HM_NORMALIZATION:
+        if self.model_cfg.HM_NORMALIZATION: # default, True
             for pred_dict in pred_dicts:
                 pred_dict['hm'] = self.sigmoid(pred_dict['hm'])
         self.forward_ret_dict['pred_dicts'] = pred_dicts

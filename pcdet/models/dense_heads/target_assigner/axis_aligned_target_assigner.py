@@ -167,7 +167,7 @@ class AxisAlignedTargetAssigner(object):
 
         fg_inds = (labels > 0).nonzero()[:, 0]
 
-        if self.pos_fraction is not None:
+        if self.pos_fraction is not None:   # default not used
             num_fg = int(self.pos_fraction * self.sample_size)
             if len(fg_inds) > num_fg:
                 num_disabled = len(fg_inds) - num_fg

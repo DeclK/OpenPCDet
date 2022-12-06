@@ -3,10 +3,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn.init import kaiming_normal_
-from ..model_utils import model_nms_utils
-from ..model_utils import centernet_utils
+
 from ...utils import loss_utils
-from .aux_module.cgam import CGAM
+from ..model_utils import centernet_utils, model_nms_utils
+from .aux_module.cgam import CGAM, CGAM_MultiHead
 
 
 class SeparateHeadAux(nn.Module):
@@ -71,12 +71,17 @@ class CenterHeadSemiAux(nn.Module):
         total_classes = sum([len(x) for x in self.class_names_each_head])
         assert total_classes == len(self.class_names), f'class_names_each_head={self.class_names_each_head}'
 
+        if model_cfg.CGAM.get('USE_MULTI_HEAD', False):
+            self.aux_module = CGAM_MultiHead(model_cfg.CGAM, input_channels, class_names, 
+                                    voxel_size, point_cloud_range)
+            aux_channels = self.aux_module.corner_types * (num_class + 2)
         # CGAM module
-        self.aux_module = CGAM(model_cfg.CGAM, input_channels, class_names, 
-                                grid_size, voxel_size, point_cloud_range)
-        # adjust input channels for aux feature
-        aux_channels = self.aux_module.corner_types * num_class  \
-                     + self.aux_module.corner_types * model_cfg.CGAM.HEAD_DICT.corner.out_channels
+        else:
+            self.aux_module = CGAM(model_cfg.CGAM, input_channels, class_names, 
+                                    voxel_size, point_cloud_range)
+            # adjust input channels for aux feature, hm + corner
+            aux_channels = self.aux_module.corner_types * (1 + 2)
+
         self.shared_conv = nn.Sequential(
             nn.Conv2d(
                 input_channels, self.model_cfg.SHARED_CONV_CHANNEL, 3, stride=1, padding=1,
@@ -274,7 +279,7 @@ class CenterHeadSemiAux(nn.Module):
             batch_hm = pred_dict['hm'].sigmoid()
             batch_center = pred_dict['center']
             batch_center_z = pred_dict['center_z']
-            batch_dim = pred_dict['dim'].exp()
+            batch_dim = pred_dict['dim'].clamp_max(5).exp() # for stable semi training
             batch_rot_cos = pred_dict['rot'][:, 0].unsqueeze(dim=1)
             batch_rot_sin = pred_dict['rot'][:, 1].unsqueeze(dim=1)
             batch_vel = pred_dict['vel'] if 'vel' in self.separate_head_cfg.HEAD_ORDER else None
@@ -334,9 +339,9 @@ class CenterHeadSemiAux(nn.Module):
 
     def forward(self, data_dict):
         spatial_features_2d = data_dict['spatial_features_2d']
-        aux_feat = self.aux_module(data_dict)   # aux module
+        aux_feat, pred_corners = self.aux_module(data_dict)   # aux module
         x = self.shared_conv(spatial_features_2d)
-        x = torch.cat((x, aux_feat), dim=1)
+        x = torch.cat((x, aux_feat.detach()), dim=1)
 
         pred_dicts = []
         for head in self.heads_list:

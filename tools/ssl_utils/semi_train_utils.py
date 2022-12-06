@@ -7,12 +7,15 @@ from .sess import sess
 from .pseudo_label import pseudo_label
 from .iou_match_3d import iou_match_3d
 from .se_ssd import se_ssd
+from .dense_teacher import dense_teacher
+from eval_utils.eval_utils import eval_one_epoch
 
 semi_learning_methods = {
     'SESS': sess,
     'Pseudo-Label': pseudo_label,
     '3DIoUMatch': iou_match_3d,
     'SE_SSD': se_ssd,
+    'DenseTeacher': dense_teacher
 }
 
 def train_ssl_one_epoch(teacher_model, student_model, optimizer, labeled_loader, unlabeled_loader, epoch_id, lr_scheduler, accumulated_iter, ssl_cfg,
@@ -52,8 +55,10 @@ def train_ssl_one_epoch(teacher_model, student_model, optimizer, labeled_loader,
         if tb_log is not None:
             tb_log.add_scalar('meta_data/learning_rate', cur_lr, accumulated_iter)
 
+        student_model.train()
         optimizer.zero_grad()
 
+        torch.autograd.set_detect_anomaly(True)
 
         loss, tb_dict, disp_dict = semi_learning_methods[ssl_cfg.NAME](
             teacher_model, student_model,
@@ -65,7 +70,8 @@ def train_ssl_one_epoch(teacher_model, student_model, optimizer, labeled_loader,
         forward_timer = time.time()
         cur_forward_time = forward_timer - data_timer
         
-        loss.backward()
+        with torch.autograd.detect_anomaly():
+            loss.backward()
 
         clip_grad_norm_(student_model.parameters(), ssl_cfg.STUDENT.GRAD_NORM_CLIP)
         optimizer.step()
@@ -192,6 +198,80 @@ def train_ssl_model(teacher_model, student_model, student_optimizer, labeled_loa
                     save_checkpoint(
                         checkpoint_state(teacher_model, student_optimizer, trained_epoch, accumulated_iter), filename=teacher_ckpt_name,
                     )
+
+def train_ssl_model_with_eval(teacher_model, student_model, student_optimizer, labeled_loader, unlabeled_loader, test_loader, eval_info,
+                    lr_scheduler, ssl_cfg,
+                    start_epoch, total_epochs, start_iter, rank, tb_log, ckpt_save_dir,
+                    labeled_sampler, unlabeled_sampler,
+                    lr_warmup_scheduler=None, ckpt_save_interval=1, max_ckpt_save_num=50,
+                    merge_all_iters_to_one_epoch=False, dist=False):
+    accumulated_iter = start_iter
+    use_unlabel = False if unlabeled_loader is None else True
+    with tqdm.trange(start_epoch, total_epochs, desc='epochs', dynamic_ncols=True, leave=(rank == 0)) as tbar:
+        total_it_each_epoch = len(labeled_loader) # total iterations set to labeled set
+        assert merge_all_iters_to_one_epoch is False
+        labeled_loader_iter = iter(labeled_loader)
+        unlabeled_loader_iter = iter(unlabeled_loader) if use_unlabel else None    # CHK MARK, if no unlabeled data
+
+        for cur_epoch in tbar:
+            if labeled_sampler is not None:
+                labeled_sampler.set_epoch(cur_epoch)
+            if unlabeled_sampler is not None:
+                unlabeled_sampler.set_epoch(cur_epoch)
+            # train one epoch
+            if lr_warmup_scheduler is not None and cur_epoch < ssl_cfg.STUDENT.WARMUP_EPOCH:
+                cur_scheduler = lr_warmup_scheduler
+            else:
+                cur_scheduler = lr_scheduler
+            accumulated_iter = train_ssl_one_epoch(
+                teacher_model = teacher_model,
+                student_model = student_model,
+                optimizer = student_optimizer,
+                labeled_loader = labeled_loader,
+                unlabeled_loader = unlabeled_loader,
+                epoch_id = cur_epoch,
+                lr_scheduler=cur_scheduler,
+                accumulated_iter=accumulated_iter, ssl_cfg=ssl_cfg,
+                rank=rank, tbar=tbar, tb_log=tb_log,
+                leave_pbar=(cur_epoch + 1 == total_epochs),
+                total_it_each_epoch=total_it_each_epoch,
+                labeled_loader_iter=labeled_loader_iter,
+                unlabeled_loader_iter=unlabeled_loader_iter,
+                dist = dist
+            )
+
+            # evaluation
+            trained_epoch = cur_epoch + 1
+
+            if trained_epoch % ckpt_save_interval == 0:
+                model_for_eval = student_model.module.onepass if eval_info['dist_test'] else student_model
+                eval_dict = eval_one_epoch(model=model_for_eval, dataloader=test_loader, epoch_id=trained_epoch, **eval_info)
+                if rank == 0:
+                    for key, val in eval_dict.items():
+                        tb_log.add_scalar(key, val, trained_epoch)
+
+            # save trained model
+            if trained_epoch % ckpt_save_interval == 0 and rank == 0:
+
+                student_ckpt_name = ckpt_save_dir / 'student' / ('checkpoint_epoch_%d' % trained_epoch)
+                if dist:
+                    save_checkpoint(
+                        checkpoint_state(student_model.module.onepass, student_optimizer, trained_epoch, accumulated_iter), filename=student_ckpt_name,
+                    )
+                else:
+                    save_checkpoint(
+                        checkpoint_state(student_model, student_optimizer, trained_epoch, accumulated_iter), filename=student_ckpt_name,
+                    )
+                teacher_ckpt_name = ckpt_save_dir / 'teacher'/ ('checkpoint_epoch_%d' % trained_epoch)
+                if dist:
+                    save_checkpoint(
+                        checkpoint_state(teacher_model.module.onepass, student_optimizer, trained_epoch, accumulated_iter), filename=teacher_ckpt_name,
+                    )
+                else:
+                    save_checkpoint(
+                        checkpoint_state(teacher_model, student_optimizer, trained_epoch, accumulated_iter), filename=teacher_ckpt_name,
+                    )
+                
 
 def model_state_to_cpu(model_state):
     model_state_cpu = type(model_state)()  # ordered dict

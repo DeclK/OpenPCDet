@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from .anchor_head_template import AnchorHeadTemplate
-from .aux_module.cgam import CGAM
+from .aux_module.cgam import CGAM, SE
 
 class AnchorHeadSemiAux(AnchorHeadTemplate):
     def __init__(self, model_cfg, input_channels, num_class, class_names, grid_size, voxel_size, point_cloud_range,
@@ -12,12 +12,15 @@ class AnchorHeadSemiAux(AnchorHeadTemplate):
             model_cfg=model_cfg, num_class=num_class, class_names=class_names, grid_size=grid_size, point_cloud_range=point_cloud_range,
             predict_boxes_when_training=predict_boxes_when_training
         )
-       # CGAM module
+        # CGAM module
         self.aux_module = CGAM(model_cfg.CGAM, input_channels, class_names, 
-                                grid_size, voxel_size, point_cloud_range)
-        # adjust input channels for aux feature
-        input_channels = input_channels + self.aux_module.corner_types * num_class  \
-                                        + self.aux_module.corner_types * model_cfg.CGAM.HEAD_DICT.corner.out_channels
+                               voxel_size, point_cloud_range)
+        aux_channels = self.aux_module.corner_types * (1 + 2)
+        if self.model_cfg.get('USE_SE_FUSION', False): 
+            self.conv1 = nn.Conv2d(input_channels + aux_channels, input_channels, 3, 1, 1)
+            self.se = SE(input_channels)
+        else: 
+            input_channels = input_channels + aux_channels
 
         self.num_anchors_per_location = sum(self.num_anchors_per_location)
 
@@ -48,10 +51,14 @@ class AnchorHeadSemiAux(AnchorHeadTemplate):
         nn.init.normal_(self.conv_box.weight, mean=0, std=0.001)
 
     def forward(self, data_dict):
-        aux_feat = self.aux_module(data_dict)
+        aux_feat, pred_corners = self.aux_module(data_dict)
         spatial_features_2d = data_dict['spatial_features_2d']
         spatial_features_2d = torch.cat((spatial_features_2d, aux_feat), dim=1)
-
+        if self.model_cfg.get('USE_SE_FUSION', False): 
+            spatial_features_2d = self.conv1(spatial_features_2d)
+            channel_weight = self.se(spatial_features_2d)
+            spatial_features_2d = spatial_features_2d * channel_weight
+            
         cls_preds = self.conv_cls(spatial_features_2d)
         box_preds = self.conv_box(spatial_features_2d)
 

@@ -55,7 +55,7 @@ class SemiDatasetTemplate(torch_data.Dataset):
         self.voxel_size = self.data_processor.voxel_size
         self.total_epochs = 0
         self._merge_all_iters_to_one_epoch = False
-        if hasattr(self.data_processor, "depth_downsample_factor"): # CHK MAKR, make it compatible with pcdet 0.5
+        if hasattr(self.data_processor, "depth_downsample_factor"): # CHK MARK, make it compatible with pcdet 0.5
             self.depth_downsample_factor = self.data_processor.depth_downsample_factor
         else:
             self.depth_downsample_factor = None

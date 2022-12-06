@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from .anchor_head_template import AnchorHeadTemplate
-from .aux_module.cgam import CGAM, SE
+from .aux_module.cgam import CGAM, CGAM_MultiHead, SE
 
 
 class AnchorHeadAux(AnchorHeadTemplate):
@@ -13,11 +13,17 @@ class AnchorHeadAux(AnchorHeadTemplate):
             model_cfg=model_cfg, num_class=num_class, class_names=class_names, grid_size=grid_size, point_cloud_range=point_cloud_range,
             predict_boxes_when_training=predict_boxes_when_training
         )
+
+        if model_cfg.CGAM.get('USE_MULTI_HEAD', False):
+            self.aux_module = CGAM_MultiHead(model_cfg.CGAM, input_channels, class_names, 
+                                    voxel_size, point_cloud_range)
+            aux_channels = self.aux_module.corner_types * (num_class + 2)
         # CGAM module
-        self.aux_module = CGAM(model_cfg.CGAM, input_channels, class_names, 
-                               voxel_size, point_cloud_range)
-        # adjust input channels for aux feature
-        aux_channels = self.aux_module.corner_types * (1 + 2)
+        else:
+            self.aux_module = CGAM(model_cfg.CGAM, input_channels, class_names, 
+                                    voxel_size, point_cloud_range)
+            # adjust input channels for aux feature, hm + corner
+            aux_channels = self.aux_module.corner_types * (1 + 2)
         if not self.model_cfg.get('USE_SE_FUSION', False): 
             input_channels = input_channels + aux_channels
 

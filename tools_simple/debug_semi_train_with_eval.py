@@ -10,7 +10,7 @@ CUDA_INDEX = ','.join(map(str, gpu_index))
 
 os.chdir(work_dir)
 os.system(f"export CUDA_VISIBLE_DEVICES='{CUDA_INDEX}' && \
-            python semi_train.py    \
+            python semi_train_with_eval.py    \
             --cfg_file {CONFIG_FILE}\
             --pretrained_model {pretrained_model}\
             --fix_random_seed")

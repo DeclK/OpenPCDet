@@ -1,15 +1,15 @@
 import os
 
-CONFIG_FILE = ''
-gpu_index = []
-sample_per_gpu = 8
-CKPT_CHEK_INTERVAL = 1
+CONFIG_FILE = '/OpenPCDet/tools/cfgs/once_models/cg_ssd.yaml'
+gpu_index = [0,1,2]
+sample_per_gpu = 4
+CKPT_CHEK_INTERVAL = 2
 
 NUM_GPUS = len(gpu_index)
 BATCH_SIZE = NUM_GPUS * sample_per_gpu
 CUDA_INDEX = ','.join(map(str, gpu_index))
 
-os.chdir('/home/chk/OpenPCDet/tools')
+os.chdir('/OpenPCDet/tools')
 os.system(f"export CUDA_VISIBLE_DEVICES='{CUDA_INDEX}' && \
             bash scripts/dist_train.sh {NUM_GPUS}         \
             --cfg_file {CONFIG_FILE}  \

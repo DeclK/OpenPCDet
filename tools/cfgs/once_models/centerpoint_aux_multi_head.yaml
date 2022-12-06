@@ -30,7 +30,7 @@ MODEL:
         CLASS_AGNOSTIC: False
 
         CLASS_NAMES_EACH_HEAD: [
-            ['Car', 'Bus', 'Truck', 'Pedestrian', 'Cyclist']
+            ['Car'], ['Bus'], ['Truck'], ['Pedestrian'], ['Cyclist']
         ]
 
         SHARED_CONV_CHANNEL: 64
@@ -58,7 +58,7 @@ MODEL:
 
             HEAD_DICT: {
                 'hm':{'num_conv': 2},
-                'corner': {'out_channels': 2, 'num_conv': 2},
+                'corner': {'num_conv': 2},
             }
             HM_NORMALIZATION: True
             TARGET_ASSIGNER_CONFIG:
@@ -68,15 +68,15 @@ MODEL:
             
             LOSS_CONFIG:
               LOSS_WEIGHTS: {
-                  'cls_weight': 1.0,
-                  'loc_weight': 2.0,
+                  'cls_weight': 0.25,
+                  'loc_weight': 0.25,
                   'code_weights': [1.0, 1.0]
               }
 
         LOSS_CONFIG:
             LOSS_WEIGHTS: {
                 'cls_weight': 1.0,
-                'loc_weight': 2.0,
+                'loc_weight': 0.25,
                 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
             }
 
@@ -84,9 +84,8 @@ MODEL:
             SCORE_THRESH: 0.1
             POST_CENTER_LIMIT_RANGE: [-75.2, -75.2, -5.0, 75.2, 75.2, 3.0]
             MAX_OBJ_PER_SAMPLE: 500
-            RECTIFIER: [0.8, 0.8, 0.8, 0.4, 0.6]
             NMS_CONFIG:
-                NMS_NAME: agnostic_nms
+                NMS_NAME: class_specific_nms
                 NMS_TYPE: nms_gpu
                 NMS_THRESH: 0.01
                 NMS_PRE_MAXSIZE: 500
