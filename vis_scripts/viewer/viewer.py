@@ -398,7 +398,7 @@ class Viewer:
         self.image = im
         return
 
-    def show_3D(self, save_name=None):
+    def show_3D(self, save_name=None, scale=1):
         """
         show objects in 3D scenes, before show_3D, you should add some objects into the current scenes
         :param bg_color: (tuple(3,) or list(3,) or str), background color of 3D scene
@@ -407,12 +407,12 @@ class Viewer:
 
         # self.vi.show(self.actors+self.actors_without_del,resetcam=False)
         self.vi.show(self.actors+self.actors_without_del,
-                    camera=dict(pos=[0,0,150], viewup=[0, 1, 0], focalPoint=[0, 0, 0], viewAngle=45))
+                    camera=dict(pos=[0,0,100], viewup=[0, 1, 0], focalPoint=[0, 0, 0], viewAngle=45))
                     # camera shooting direction is default set to x axis
                     # viewup should be perpendicular to the shooting direction
                     # focal point is normally set to a point along shooting direction
         if save_name is not None:
-            screenshot(save_name)
+            screenshot(save_name, scale=scale)
         self.vi.clear()
         self.actors.clear()
         self.points_info.clear()
