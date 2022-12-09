@@ -6,6 +6,15 @@ from tqdm import tqdm
 
 import os
 
+def print_dict(dict_, content=False, level=0):
+    """ Print dict recursively
+    """
+    for k, v in dict_.items():
+        print('\t' * level + f'{k}')
+        if type(v) == dict:
+            print_dict(v, content, level + 1)
+        elif content: print(v, '\n', '-' * 20)
+        
 def build_viewer(box_type="OpenPCDet", bg=(255,255,255), offscreen=False, remote=False):
     # in case you are working on a remote machine, specify DISPLAY value like this
     # checkout https://github.com/marcomusy/vedo/issues/64  
@@ -27,15 +36,6 @@ def main():
         training=False
     )
 
-    """ 
-    Sample Keys:
-    points, frame_id, gt_boxes, use_lead_xyz, voxels,
-    voxel_coords, voxel_num_points, batch_size
-
-    Result Keys:
-    name, score, boxes_3d, frame_id
-    """
-
     seca = EasyPickle.load(seca)
     second = EasyPickle.load(second)
     n = len(test_loader)
@@ -44,7 +44,9 @@ def main():
     vi = build_viewer(offscreen=True)
 
     for idx, sample in enumerate(test_loader):
-        # get item
+        # Sample Keys: points, frame_id, gt_boxes, use_lead_xyz, voxels,
+        #              voxel_coords, voxel_num_points, batch_size
+        # Result Keys: name, score, boxes_3d, frame_id
         pred_seca = seca[idx]
         pred_frame_id, pred_boxes_3d, pred_score, pred_name = \
         pred_seca['frame_id'], pred_seca['boxes_3d'], pred_seca['score'], pred_seca['name']
