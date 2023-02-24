@@ -2,8 +2,8 @@ import os
 from pathlib import Path
 workd_dir = Path(__file__).resolve().parents[1] / 'tools'
 
-CONFIG_FILE = '/OpenPCDet/tools/cfgs/once_semi_models/mean_teacher_cg_ssd.yaml'
-CKPT = '/OpenPCDet/data/seca/semi_cg_ssd_lr_0.003_60_epoch_best/OpenPCDet/tools/cfgs/once_semi_models/mean_teacher_cg_ssd/default/ssl_ckpt/teacher/checkpoint_epoch_60.pth'
+CONFIG_FILE = '/OpenPCDet/tools/cfgs/kitti_models/cg_ssd.yaml'
+CKPT = '/OpenPCDet/data/output_with_fixed_seed/cg_ssd_and_second_sc/cfgs/kitti_models/cg_ssd/default/ckpt/checkpoint_epoch_80.pth'
 gpu_index = [0]
 sample_per_gpu = 1
 

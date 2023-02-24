@@ -12,9 +12,9 @@ import re
 
 
 grid = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-config_file = Path('/OpenPCDet/tools/cfgs/once_semi_models/mean_teacher_cg_ssd.yaml')
+config_file = Path('/OpenPCDet/tools/cfgs/kitti_models/cg_ssd.yaml')
 
-CKPT = '/OpenPCDet/data/seca/semi_cg_ssd_lr_0.003_60_epoch_best/OpenPCDet/tools/cfgs/once_semi_models/mean_teacher_cg_ssd/default/ssl_ckpt/teacher/checkpoint_epoch_60.pth'
+CKPT = '/OpenPCDet/data/output_with_fixed_seed/cg_ssd_and_second_sc/cfgs/kitti_models/cg_ssd/default/ckpt/checkpoint_epoch_80.pth'
 gpu_index = [0, 1, 2]
 sample_per_gpu = 4
 NUM_GPUS = len(gpu_index)
@@ -58,4 +58,5 @@ def print_result_from_grid_search(dir):
 
 if __name__ == '__main__':
     output = '/OpenPCDet/output'
-    print_result_from_grid_search(output)
+    # print_result_from_grid_search(output)
+    grid_search()

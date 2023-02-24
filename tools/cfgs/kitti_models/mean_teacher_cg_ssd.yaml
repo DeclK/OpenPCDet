@@ -1,8 +1,6 @@
-CLASS_NAMES: ['Car', 'Bus', 'Truck', 'Pedestrian', 'Cyclist']
+CLASS_NAMES: ['Car', 'Pedestrian', 'Cyclist']
 
 USE_PRETRAIN_MODEL: False
-PRETRAIN_CKPT: ../output/once_models/ckpt/checkpoint_xx.pth
-CLOUD_PRETRAIN_CKPT: /home/work/user-job-dir/ONCE_Benchmark/output/once_models/ckpt/checkpoint_xx.pth
 
 DATA_CONFIG: 
     _BASE_CONFIG_: cfgs/dataset_configs/once_semi_dataset.yaml

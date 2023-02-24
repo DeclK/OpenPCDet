@@ -1,6 +1,6 @@
 import os
 
-CONFIG_FILE = '/OpenPCDet/tools/cfgs/once_models/second_res.yaml'
+CONFIG_FILE = '/OpenPCDet/tools/cfgs/kitti_models/cg_ssd.yaml'
 gpu_index = [0,1,2]
 sample_per_gpu = 4
 CKPT_CHEK_INTERVAL = 2
