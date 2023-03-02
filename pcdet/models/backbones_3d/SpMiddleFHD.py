@@ -27,12 +27,15 @@ def post_act_block(in_channels, out_channels, kernel_size, indice_key=None, stri
 
 
 class SpMiddleFHD(nn.Module):
+    """ Difference from VoxelBackBone8x:
+        - 2 layer deeper 
+        - out channel 64
+    """
     def __init__(self, model_cfg, input_channels, grid_size, **kwargs):
         super().__init__()
         self.model_cfg = model_cfg
         norm_fn = partial(nn.BatchNorm1d, eps=1e-3, momentum=0.01)
 
-        # shape 原本的顺序是 xyz，现在要转换为 zyx，以适应 spconv
         self.sparse_shape = grid_size[::-1] + [1, 0, 0]
 
         self.conv_input = spconv.SparseSequential(
@@ -40,7 +43,7 @@ class SpMiddleFHD(nn.Module):
             norm_fn(16),
             nn.ReLU(),
         )
-        # block 可以根据指定 conv_type 返回对应的打包卷积层 subm or spconv + bn + relu 
+
         block = post_act_block
 
         self.conv1 = spconv.SparseSequential(
@@ -74,8 +77,7 @@ class SpMiddleFHD(nn.Module):
         last_pad = self.model_cfg.get('last_pad', last_pad)
         # 为什么这里不用 block，应该可以的
         self.conv_out = spconv.SparseSequential(
-            # [200, 150, 5] -> [200, 150, 2]
-            # [200, 176, 5] -> [200, 176, 2]？
+            # [200, 176, 5] -> [200, 176, 2]
             spconv.SparseConv3d(64, 64, (3, 1, 1), stride=(2, 1, 1), padding=last_pad,
                                 bias=False, indice_key='spconv_down2'),
             norm_fn(64),

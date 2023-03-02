@@ -12,9 +12,9 @@ import re
 
 
 grid = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-config_file = Path('/OpenPCDet/tools/cfgs/kitti_models/cg_ssd.yaml')
+config_file = Path('/OpenPCDet/tools/cfgs/kitti_models/cg_ssd_car.yaml')
 
-CKPT = '/OpenPCDet/data/output_with_fixed_seed/cg_ssd_and_second_sc/cfgs/kitti_models/cg_ssd/default/ckpt/checkpoint_epoch_80.pth'
+CKPT = '/OpenPCDet/output/OpenPCDet/tools/cfgs/kitti_models/cg_ssd_car/default/ckpt/checkpoint_epoch_80.pth'
 gpu_index = [0, 1, 2]
 sample_per_gpu = 4
 NUM_GPUS = len(gpu_index)

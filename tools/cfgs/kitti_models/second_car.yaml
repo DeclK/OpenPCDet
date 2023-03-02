@@ -1,37 +1,62 @@
-CLASS_NAMES: ['Car', 'Pedestrian', 'Cyclist']
+CLASS_NAMES: ['Car']
 
 DATA_CONFIG: 
     _BASE_CONFIG_: cfgs/dataset_configs/kitti_dataset.yaml
+    DATA_AUGMENTOR:
+        DISABLE_AUG_LIST: ['placeholder']
+        AUG_CONFIG_LIST:
+            - NAME: gt_sampling
+              USE_ROAD_PLANE: True
+              DB_INFO_PATH:
+                  - kitti_dbinfos_train.pkl
+              PREPARE: {
+                 filter_by_min_points: ['Car:5'],
+                 filter_by_difficulty: [-1],
+              }
+
+              SAMPLE_GROUPS: ['Car:15']
+              NUM_POINT_FEATURES: 4
+              DATABASE_WITH_FAKELIDAR: False
+              REMOVE_EXTRA_WIDTH: [0.0, 0.0, 0.0]
+              LIMIT_WHOLE_SCENE: False
+
+            - NAME: random_world_flip
+              ALONG_AXIS_LIST: ['x']
+
+            - NAME: random_world_rotation
+              WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
+
+            - NAME: random_world_scaling
+              WORLD_SCALE_RANGE: [0.95, 1.05]
 
 
 MODEL:
-    NAME: CGSSD
+    NAME: SECONDNet
 
     VFE:
         NAME: MeanVFE
 
     BACKBONE_3D:
-        NAME: VoxelBackBone8x
+        NAME: SpMiddleFHD
 
     MAP_TO_BEV:
         NAME: HeightCompression
-        NUM_BEV_FEATURES: 256
+        NUM_BEV_FEATURES: 128
 
     BACKBONE_2D:
         NAME: BaseBEVBackbone
 
         LAYER_NUMS: [5, 5]
         LAYER_STRIDES: [1, 2]
-        NUM_FILTERS: [128, 256]
+        NUM_FILTERS: [64, 128]
         UPSAMPLE_STRIDES: [1, 2]
-        NUM_UPSAMPLE_FILTERS: [256, 256]
+        NUM_UPSAMPLE_FILTERS: [128, 128]
 
     DENSE_HEAD:
-        NAME: AnchorHeadAux
+        NAME: AnchorHeadSingle
         CLASS_AGNOSTIC: False
 
         USE_DIRECTION_CLASSIFIER: True
-        USE_SE_FUSION: False
         DIR_OFFSET: 0.78539
         DIR_LIMIT_OFFSET: 0.0
         NUM_DIR_BINS: 2
@@ -46,29 +71,8 @@ MODEL:
                 'feature_map_stride': 8,
                 'matched_threshold': 0.6,
                 'unmatched_threshold': 0.45
-            },
-            {
-                'class_name': 'Pedestrian',
-                'anchor_sizes': [[0.8, 0.6, 1.73]],
-                'anchor_rotations': [0, 1.57],
-                'anchor_bottom_heights': [-0.6],
-                'align_center': False,
-                'feature_map_stride': 8,
-                'matched_threshold': 0.5,
-                'unmatched_threshold': 0.35
-            },
-            {
-                'class_name': 'Cyclist',
-                'anchor_sizes': [[1.76, 0.6, 1.73]],
-                'anchor_rotations': [0, 1.57],
-                'anchor_bottom_heights': [-0.6],
-                'align_center': False,
-                'feature_map_stride': 8,
-                'matched_threshold': 0.5,
-                'unmatched_threshold': 0.35
             }
         ]
-
 
         TARGET_ASSIGNER_CONFIG:
             NAME: AxisAlignedTargetAssigner
@@ -77,27 +81,6 @@ MODEL:
             NORM_BY_NUM_EXAMPLES: False
             MATCH_HEIGHT: False
             BOX_CODER: ResidualCoder
-
-        CGAM: # corner-guided auxiliary module
-            CORNER_TYPES: ['LT', 'RT', 'RD', 'LD']
-            SHARED_CONV_CHANNEL: 64
-
-            HEAD_DICT: {
-                'hm':{'num_conv': 2},
-                'corner': {'num_conv': 2},
-            }
-            HM_NORMALIZATION: True
-            TARGET_ASSIGNER_CONFIG:
-                FEATURE_MAP_STRIDE: 8
-                GAUSSIAN_OVERLAP: 0.1
-                MIN_RADIUS: 4   # tried 2, not so working on cars, 4 is not working on car
-            
-            LOSS_CONFIG:
-              LOSS_WEIGHTS: {
-                  'cls_weight': 0.25,
-                  'loc_weight': 0.25,
-                  'code_weights': [1.0, 1.0]
-              }
 
         LOSS_CONFIG:
             LOSS_WEIGHTS: {
@@ -109,7 +92,6 @@ MODEL:
 
     POST_PROCESSING:
         RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
-        RECTIFIER: 0.0
         SCORE_THRESH: 0.3
         OUTPUT_RAW_SCORE: False
 

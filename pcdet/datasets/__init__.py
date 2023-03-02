@@ -15,6 +15,7 @@ from .aw.aw_dataset import AwDataset
 
 from .once.once_semi_dataset import ONCEPretrainDataset, ONCELabeledDataset, ONCEUnlabeledDataset, ONCETestDataset, split_once_semi_data
 from .aw.aw_semi_dataset import AWPretrainDataset, AWLabeledDataset, AWUnlabeledDataset, AWTestDataset
+from .kitti.kitti_semi_dataset import KittiPretrainDataset, KittiLabeledDataset, KittiUnlabeledDataset,KittiTestDataset
 
 __all__ = {
     'DatasetTemplate': DatasetTemplate,
@@ -41,6 +42,13 @@ _semi_dataset_dict = {
         'LABELED': AWLabeledDataset,
         'UNLABELED': AWUnlabeledDataset,
         'TEST': AWTestDataset
+    },
+    'KittiDataset': {
+        'PARTITION_FUNC': split_once_semi_data,
+        'PRETRAIN': KittiPretrainDataset,
+        'LABELED': KittiLabeledDataset,
+        'UNLABELED': KittiUnlabeledDataset,
+        'TEST': KittiTestDataset
     }
 }
 
